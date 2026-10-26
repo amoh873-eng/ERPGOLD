@@ -1,0 +1,57 @@
+@* ══════════════════════════════════════════════════════════════════════════
+   عرض موحّد لجدول تقرير: رأس مجموعات أعمدة + صفوف هرمية (تجميعي/تفصيلي)
+   + صفوف إجماليات متعددة. يستخدمه مركز التقارير (ReportPopup) وصفحة
+   ميزان المراجعة — لضمان تطابق الشاشة والطباعة حرفيًا.
+   ══════════════════════════════════════════════════════════════════════════ *@
+@using ERPSystem.Application.Reporting
+<table class="report-table @Table.CssClass">
+    <thead>
+        @if (Table.HeaderGroups != null && Table.HeaderGroups.Count > 0)
+        {
+            <tr class="report-group-row">
+                @foreach (var g in Table.HeaderGroups)
+                {
+                    <th colspan="@g.Span">@g.Title</th>
+                }
+            </tr>
+        }
+        <tr>@foreach (var h in Table.Headers) { <th>@h</th> }</tr>
+    </thead>
+    <tbody>
+        @for (var i = 0; i < Table.Rows.Count; i++)
+        {
+            var rowKind = Table.RowKinds != null && i < Table.RowKinds.Count ? Table.RowKinds[i] : null;
+            var level = Table.RowLevels != null && i < Table.RowLevels.Count ? Table.RowLevels[i] : 0;
+            <tr class="@(rowKind == "group" ? "report-row-group" : "report-row-detail") @(level > 0 ? AccountLevelStyle.CssClass(level) : null)">
+                @for (var c = 0; c < Table.Rows[i].Count; c++)
+                {
+                    @* عمودا «رقم الحساب» و«اسم الحساب» يحملان لون/حجم/سماكة المستوى
+                       من المعيار الموحّد نفسه المستخدم في PDF (مصدر واحد لا يتكرر). *@
+                    var isAccountText = level > 0 && c < 2;
+                    <td class="@(isAccountText ? AccountLevelStyle.CssClass(level) : null)"
+                        style="@(isAccountText ? AccountLevelStyle.InlineStyle(level) : null)">@Table.Rows[i][c]</td>
+                }
+            </tr>
+        }
+    </tbody>
+    @if (Table.TotalsRows != null && Table.TotalsRows.Count > 0)
+    {
+        <tfoot>
+            @foreach (var totalRow in Table.TotalsRows)
+            {
+                <tr class="report-total-row">
+                    @foreach (var t in totalRow) { <td><b>@t</b></td> }
+                </tr>
+            }
+        </tfoot>
+    }
+    else if (Table.Totals != null)
+    {
+        <tfoot><tr class="report-total-row">@foreach (var t in Table.Totals) { <td><b>@t</b></td> }</tr></tfoot>
+    }
+</table>
+
+@code {
+    /// <summary>جدول التقرير المراد عرضه (نفس البنية في كل الشاشات ومسارات التصدير).</summary>
+    [Parameter, EditorRequired] public GenericReportTable Table { get; set; } = default!;
+}

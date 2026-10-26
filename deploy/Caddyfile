@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------
+# Caddy ingress for a standalone ERP installation.
+#
+# Default behaviour: HTTP on :80 for every Host. This works on a
+# fresh installation with no domain and never requests a certificate
+# for a domain that does not belong to the customer.
+#
+# To use a customer domain with automatic HTTPS:
+#   1. Point the customer's DNS A/AAAA record to this server.
+#   2. Uncomment the site block below and replace erp.example.com
+#      and admin@example.com with the customer's values.
+#   3. Keep ports 80 and 443 published in docker-compose.yml.
+# Caddy will obtain and renew the certificate automatically.
+# ---------------------------------------------------------------
+{
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+# erp.example.com {
+#     encode gzip
+#     reverse_proxy web:8080
+# }
+
+:80 {
+    encode gzip
+
+    # Mobile/API traffic
+    handle /api/health {
+        uri strip_prefix /api
+        reverse_proxy api:8080
+    }
+    handle /api/* {
+        reverse_proxy api:8080
+    }
+    handle /health {
+        reverse_proxy api:8080
+    }
+
+    # Optional mobile APK download area (named volume, see compose)
+    handle /mobile/* {
+        uri strip_prefix /mobile
+        root * /srv/mobile-downloads
+        file_server
+    }
+
+    # Blazor ERP web application (all other paths)
+    handle {
+        reverse_proxy web:8080
+    }
+}

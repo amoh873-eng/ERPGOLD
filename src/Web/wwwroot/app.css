@@ -1,0 +1,961 @@
+/* =====================================================================
+   app.css — الطبقة الرقيقة الوحيدة فوق ثيم MudBlazor
+   ---------------------------------------------------------------------
+   هذا الملف يحتوي فقط على تخصيصات فوق ثيم MudBlazor المعرّف في MainLayout.razor.
+   أي تعديل تصميمي مستقبلي يجب أن يعدّل هنا أو في MudTheme مباشرة،
+   ولا يُسمح بإضافة طبقة تصميم جديدة فوق القديمة دون حذف ما قبلها.
+   المصدر الوحيد للألوان والقياسات الأساسية هو MudTheme في MainLayout.razor.
+   ===================================================================== */
+
+/* متغيرات الهوية — يجب أن تبقى مطابقة تماماً لـ MudTheme في MainLayout.razor */
+:root {
+    --erp-bg: #F4F5F9;
+    --erp-card: #FFFFFF;
+    --erp-primary: #6D5BD0;
+    --erp-primary-light: #F0EDFB;
+    --erp-secondary: #6B7280;
+    --erp-text: #1F2937;
+    --erp-muted: #6B7280;
+    --erp-border: #E5E7EB;
+    --erp-table-header: #F9FAFB;
+    --erp-success: #10B981;
+    --erp-warning: #F59E0B;
+    --erp-error: #EF4444;
+}
+
+html, body {
+    font-family: 'Cairo', 'Tajawal', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+a, .btn-link {
+    color: var(--erp-primary);
+}
+
+/* نص ثانوي */
+.muted-text {
+    color: var(--erp-muted);
+    font-size: 0.875rem;
+}
+
+/* كميات حركات المخزون (وارد أخضر / صادر أحمر) */
+td.stock-in {
+    color: var(--erp-success);
+    font-weight: 600;
+}
+
+td.stock-out {
+    color: var(--erp-error);
+    font-weight: 600;
+}
+
+/* خلفية الشعار والإعدادات ملونة — تدرج بنفسجي فاتح */
+.mud-appbar{ background: linear-gradient(90deg, #F0EDFB 0%, #EDE9FE 100%) !important; }
+/* الشريط العلوي: بلا ظل + خط سفلي خفيف — طبقة عالية فوق أي شريط بحث sticky */
+.mud-appbar {
+    box-shadow: none;
+    border-bottom: 1px solid var(--erp-border);
+    z-index: 1300 !important;
+}
+
+/* MudBlazor يضع AppBar كـ fixed — نرفع z-index للطبقة الثابتة أيضاً */
+.mud-drawer-open ~ .mud-appbar,
+.mud-appbar-fixed {
+    z-index: 1300 !important;
+}
+
+/* البطاقات: ظل خفيف + حدود خفيفة */
+.mud-card {
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+    border: 1px solid var(--erp-border);
+}
+
+/* شريط التنقل الأفقي العلوي */
+.erp-topnav {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-inline-start: 12px;
+    flex-wrap: nowrap;
+}
+
+/* زر تنقل ذهبي ثلاثي الأبعاد — عند النقر يتحول لفضي */
+.erp-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #FFF8DC 0%, #FDE68A 30%, #F59E0B 55%, #B45309 100%);
+    color: #78350F;
+    text-decoration: none;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border: 1px solid #FBBF24;
+    box-shadow: 0 4px 0 #92400E, 0 9px 16px rgba(146, 64, 14, .22);
+    transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.erp-nav-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 0 #92400E, 0 14px 22px rgba(146, 64, 14, .30);
+    filter: brightness(1.05);
+}
+
+.erp-nav-btn:active {
+    transform: translateY(2px);
+    background: linear-gradient(180deg, #F9FAFB 0%, #E5E7EB 35%, #9CA3AF 60%, #6B7280 100%);
+    color: #1F2937;
+    border-color: #9CA3AF;
+    box-shadow: 0 1px 0 #6B7280, 0 3px 6px rgba(0, 0, 0, .12);
+}
+
+/* أيقونة الزر — بني داكن على الذهبي، رمادي داكن على الفضي */
+.erp-nav-btn .erp-nav-icon {
+    color: #78350F;
+    font-size: 0.95rem;
+    margin-inline-end: 0;
+}
+
+.erp-nav-btn.active,
+.erp-dropdown.active > .erp-nav-btn {
+    background: linear-gradient(180deg, #F3F4F6 0%, #D1D5DB 35%, #9CA3AF 60%, #6B7280 100%);
+    color: #1F2937;
+    border-color: #9CA3AF;
+    box-shadow: 0 4px 0 #6B7280, 0 10px 18px rgba(107, 114, 128, .30);
+    text-shadow: none;
+}
+
+.erp-nav-btn.active .erp-nav-icon,
+.erp-dropdown.active > .erp-nav-btn .erp-nav-icon {
+    color: #374151;
+}
+
+/* قوائم التنقل المنسدلة (CSS hover — بدون JavaScript) */
+.erp-dropdown {
+    position: relative;
+    display: inline-flex;
+}
+
+/* جسر شفاف يملأ الفجوة بين الزر والقائمة المنسدلة حتى لا تختفي القائمة عند تحريك الماوس */
+.erp-dropdown::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    inset-inline-start: 0;
+    width: 100%;
+    height: 10px;
+}
+
+.erp-dropdown .erp-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    inset-inline-start: 0;
+    min-width: 230px;
+    max-height: min(65vh, 520px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #fff;
+    border: 1px solid #E5E7EB;
+    border-radius: 14px;
+    box-shadow: 0 18px 36px rgba(16, 24, 40, .18);
+    padding: 8px;
+    z-index: 1100;
+    animation: erp-menu-in .18s ease;
+}
+
+@keyframes erp-menu-in {
+    from { opacity: 0; transform: translateY(-6px) scale(.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.erp-dropdown:hover .erp-dropdown-menu {
+    display: block;
+}
+
+.erp-dropdown-menu a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    color: #374151;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border-radius: 10px;
+    white-space: nowrap;
+    transition: background .12s ease, color .12s ease, transform .12s ease;
+}
+
+.erp-dropdown-menu a:hover {
+    background: linear-gradient(180deg, #F0EDFB 0%, #E7E2FA 100%);
+    color: #6D5BD0;
+    transform: translateX(2px);
+}
+
+/* خلفية منطقة المحتوى: تدرّج بنفسجي فاتح يُضفي حيوية */
+.mud-main-content {
+    background: linear-gradient(135deg, #F1EEFB 0%, #E5DFF8 50%, #EAF2FB 100%);
+}
+
+/* رأس الجداول: خلفية فاتحة ونص رمادي واضح */
+.mud-table-head th {
+    background: var(--erp-table-header) !important;
+    color: var(--erp-secondary);
+    font-weight: 600;
+    font-size: 0.8125rem;
+}
+
+/* تأثير تمرير خفيف فوق صفوف الجداول */
+.mud-table tbody tr:hover {
+    background: #DDD3F4;
+}
+
+/* تمييز الأسطر بالتناوب (Zebra) في كل الجداول — لون أوضح وأكثر تبايناً */
+.mud-table tbody tr:nth-child(even) {
+    background: #EAE3FA;
+}
+
+/* فاصل ملوّن واضح بين أسطر الجداول */
+.mud-table tbody tr:not(:last-child) {
+    border-bottom: 1px solid #C9BBEE;
+}
+
+/* أيقونة بطاقات الإحصائيات: مربع ملوّن بزوايا دائرية */
+.erp-stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* أزرار أساسية حديثة: تدرّج بنفسجي + ظل ملوّن + رفع خفيف عند التمرير */
+.mud-button-filled.mud-button-filled-primary {
+    background: linear-gradient(135deg, #8B5CF6 0%, #6D5BD0 100%) !important;
+    box-shadow: 0 4px 14px rgba(109, 91, 208, 0.32);
+    border-radius: 10px;
+    transition: box-shadow .2s ease, transform .2s ease;
+}
+
+.mud-button-filled.mud-button-filled-primary:hover {
+    box-shadow: 0 6px 20px rgba(109, 91, 208, 0.5);
+    transform: translateY(-1px);
+}
+
+/* ===== زر إتمام البيع: ذهبي مميز (يتجاوز تدرّج الأساسي البنفسجي) ===== */
+.mud-button-filled.mud-button-filled-primary.pos-checkout {
+    padding: 18px !important;
+    font-size: 1.45rem !important;
+    background: linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%) !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+    box-shadow: 0 5px 0 #B45309, 0 10px 18px rgba(245, 158, 11, .4) !important;
+    transition: transform .1s ease, box-shadow .1s ease, background .1s ease !important;
+}
+.mud-button-filled.mud-button-filled-primary.pos-checkout:hover {
+    background: linear-gradient(180deg, #FCD34D 0%, #FBBF24 100%) !important;
+    box-shadow: 0 5px 0 #B45309, 0 12px 22px rgba(245, 158, 11, .5) !important;
+    transform: translateY(-2px);
+}
+.mud-button-filled.mud-button-filled-primary.pos-checkout:disabled {
+    background: #9CA3AF !important;
+    color: #F3F4F6 !important;
+    box-shadow: 0 4px 0 #6B7280 !important;
+    transform: none !important;
+}
+
+/* ===== زر فاتورة جديدة: تركوازي مميز ===== */
+.mud-button-filled.mud-button-filled-success.pos-new-invoice {
+    padding: 16px !important;
+    font-size: 1.25rem !important;
+    background: linear-gradient(180deg, #2DD4BF 0%, #14B8A6 100%) !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+    box-shadow: 0 5px 0 #0F766E, 0 10px 18px rgba(20, 184, 166, .35) !important;
+    transition: transform .1s ease, box-shadow .1s ease, background .1s ease !important;
+}
+.mud-button-filled.mud-button-filled-success.pos-new-invoice:hover {
+    background: linear-gradient(180deg, #5EEAD4 0%, #2DD4BF 100%) !important;
+    box-shadow: 0 5px 0 #0F766E, 0 12px 22px rgba(20, 184, 166, .45) !important;
+    transform: translateY(-2px);
+}
+
+/* أيقونات روابط التنقل */
+.erp-nav-icon {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-inline-end: 6px;
+    font-size: 1.1rem;
+}
+
+/* ===== الرسم الدائري (Donut) ===== */
+.erp-donut {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.erp-donut-chart {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* القيمة المركزية داخل فراغ الدونات */
+.erp-donut-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.erp-donut-center-value {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--erp-text);
+}
+
+.erp-donut-center-label {
+    font-size: 0.65rem;
+    color: var(--erp-muted);
+    margin-top: 2px;
+}
+
+/* وسيلة الإيضاح الملوّنة */
+.erp-donut-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.erp-donut-legend-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.erp-donut-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8125rem;
+}
+
+.erp-donut-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.erp-donut-label {
+    color: var(--erp-text);
+    flex: 1;
+    text-align: start;
+}
+
+.erp-donut-amount {
+    color: var(--erp-text);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.erp-donut-pct {
+    color: var(--erp-muted);
+    min-width: 40px;
+    text-align: end;
+}
+
+/* شريط نسبي ملوّن لكل شريحة */
+.erp-donut-bar {
+    height: 5px;
+    border-radius: 5px;
+    background: var(--erp-bg);
+    overflow: hidden;
+    margin-inline-start: 18px;
+}
+
+.erp-donut-bar-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width .4s ease;
+}
+
+/* ===== تفاعلية الرسم الدائري (MudChart Donut): حركة دخول + تكبير/ظل عند التمرير ===== */
+/* الشرائح هي <path class="mud-chart-serie"> داخل <svg class="mud-chart-donut">.
+   التحويل يُقاس من مركز الدائرة (view-box) لتكون الحركة طبيعية من المنتصف. */
+.mud-chart-donut .mud-chart-serie {
+    transform-box: view-box;
+    transform-origin: center;
+    animation: erp-donut-slice-in .55s cubic-bezier(.22, .9, .36, 1) backwards;
+    transition: transform .22s ease, filter .22s ease;
+}
+
+@keyframes erp-donut-slice-in {
+    from { opacity: 0; transform: scale(.4); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+/* تأخير متدرّج بين الشرائح يعطي إحساس "الرسم التدريجي" للدائرة */
+.mud-chart-donut .mud-chart-serie:nth-child(1) { animation-delay: .05s; }
+.mud-chart-donut .mud-chart-serie:nth-child(2) { animation-delay: .10s; }
+.mud-chart-donut .mud-chart-serie:nth-child(3) { animation-delay: .15s; }
+.mud-chart-donut .mud-chart-serie:nth-child(4) { animation-delay: .20s; }
+.mud-chart-donut .mud-chart-serie:nth-child(5) { animation-delay: .25s; }
+.mud-chart-donut .mud-chart-serie:nth-child(6) { animation-delay: .30s; }
+.mud-chart-donut .mud-chart-serie:nth-child(7) { animation-delay: .35s; }
+.mud-chart-donut .mud-chart-serie:nth-child(8) { animation-delay: .40s; }
+.mud-chart-donut .mud-chart-serie:nth-child(9) { animation-delay: .45s; }
+
+/* التمرير: تكبير خفيف + ظل + سطوع — يتجاوز فلتر lighten الافتراضي في MudBlazor */
+.mud-chart-donut .mud-chart-serie:hover {
+    transform: scale(1.05);
+    filter: drop-shadow(0 6px 12px rgba(16, 24, 40, .30)) brightness(1.06);
+}
+
+/* ظهور ناعم للنص المركزي بعد اكتمال رسم الشرائح */
+.erp-donut-center {
+    animation: erp-donut-center-in .6s ease .3s backwards;
+}
+
+@keyframes erp-donut-center-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* ===== مخطط أعمدة أفقي حديث (BarChart) ===== */
+.erp-bar {
+    display: flex;
+    flex-direction: column;
+}
+
+.erp-bar-list {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.erp-bar-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.erp-bar-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8125rem;
+}
+
+.erp-bar-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.erp-bar-label {
+    color: var(--erp-text);
+    flex: 1;
+    text-align: start;
+}
+
+.erp-bar-value {
+    color: var(--erp-text);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.erp-bar-pct {
+    color: var(--erp-muted);
+    min-width: 40px;
+    text-align: end;
+}
+
+.erp-bar-track {
+    height: 12px;
+    border-radius: 999px;
+    background: var(--erp-bg);
+    overflow: hidden;
+}
+
+.erp-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    width: 0;
+    animation: erp-bar-grow .7s cubic-bezier(.22, .9, .36, 1) forwards;
+    position: relative;
+    overflow: hidden;
+}
+
+.erp-bar-fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .30), rgba(255, 255, 255, 0) 55%);
+}
+
+@keyframes erp-bar-grow {
+    to { width: var(--w, 0%); }
+}
+
+/* ===== مخطط دونات ثلاثي الأبعاد (DonutChart3D) ===== */
+.erp-donut3d {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+
+.erp-donut3d-svg {
+    width: 100%;
+    max-width: 300px;
+    flex-shrink: 0;
+}
+
+/* النسبة داخل كل قطعة — أبيض على القرص الملوّن */
+.erp-donut3d-pct {
+    font-size: 13px;
+    font-weight: 800;
+    fill: #ffffff;
+    paint-order: stroke;
+    stroke: rgba(0,0,0,0.18);
+    stroke-width: 0.5px;
+    user-select: none;
+    pointer-events: none;
+}
+
+/* خط التسمية الخارجي + النص */
+.erp-donut3d-line {
+    stroke: #6B7280;
+    stroke-width: 1.5;
+    stroke-dasharray: none;
+}
+.erp-donut3d-callout {
+    font-size: 11px;
+    font-weight: 700;
+    fill: #374151;
+}
+
+/* وسيلة الإيضاح — نفس نمط erp-donut-legend */
+.erp-donut3d-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 150px;
+}
+.erp-donut3d-legend-item { display: flex; flex-direction: column; gap: 4px; }
+.erp-donut3d-legend-row { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; }
+.erp-donut3d-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.erp-donut3d-label { color: var(--erp-text); flex: 1; }
+.erp-donut3d-value { color: var(--erp-text); font-weight: 700; white-space: nowrap; }
+.erp-donut3d-pct { color: var(--erp-muted); min-width: 40px; text-align: end; }
+.erp-donut3d-track { height: 5px; background: #F3F4F6; border-radius: 999px; overflow: hidden; }
+.erp-donut3d-fill { height: 100%; border-radius: 999px; }
+
+/* عند وضع المكوّن داخل ChartCard ضيّق — تكديس عمودي */
+@media (max-width: 600px) {
+    .erp-donut3d { flex-direction: column; align-items: stretch; }
+}
+
+/* ===== مكوّن واجهة تجريبية لدونات 3D (وحدة تحقق) ===== */
+.erp-donut3d-demo {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 8px 0;
+}
+.erp-trend {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.erp-trend-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.erp-trend-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: var(--erp-muted);
+}
+
+.erp-trend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.erp-trend-svg {
+    overflow: visible;
+}
+
+.erp-trend-gridline {
+    stroke: var(--erp-border);
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+}
+
+.erp-trend-ylab {
+    fill: var(--erp-muted);
+    font-size: 10px;
+}
+
+.erp-trend-xlab {
+    fill: var(--erp-muted);
+    font-size: 10px;
+}
+
+.erp-trend-area {
+    animation: erp-trend-fade .8s ease .2s backwards;
+}
+
+.erp-trend-line {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: erp-trend-draw .9s ease .1s forwards;
+}
+
+.erp-trend-point {
+    stroke: #fff;
+    stroke-width: 1.5;
+    animation: erp-trend-fade .4s ease backwards;
+}
+
+@keyframes erp-trend-draw {
+    to { stroke-dashoffset: 0; }
+}
+
+@keyframes erp-trend-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* ===== تقارير موحدة — جدول منسق للطباعة ===== */
+.report-header{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2.5px solid #6D5BD0; padding-bottom:8px; margin-bottom:12px; font-size:.95rem; }
+.report-table{ width:100%; border-collapse:collapse; font-size:.88rem; }
+.report-table th, .report-table td{ border:1px solid #E5E7EB; padding:6px 8px; text-align:center; }
+.report-table th{ background:#F9FAFB; font-weight:700; }
+.report-table tfoot td{ background:#F3F4F6; font-weight:700; }
+.report-footer{ margin-top:8px; font-size:.82rem; color:#6B7280; }
+
+/* ══════════════════════════════════════════════════════════════
+   ميزان المراجعة الهرمي (report-tb) — تنسيق مخصّص لهذا التقرير فقط
+   (لا يؤثر على بقية التقارير لأن الفئة محصورة في .report-tb)
+   ══════════════════════════════════════════════════════════════ */
+
+/* صف رأس المجموعات: الأرصدة الافتتاحية / حركة الفترة / الأرصدة الختامية */
+.report-table.report-tb tr.report-group-row th {
+    background:#EDE9FE; color:#4C1D95; font-weight:800;
+    border-bottom:2px solid #C4B5FD;
+}
+
+/* أعمدة البيان (رقم الحساب/الاسم/المستوى) — محاذاة بداية السطر (RTL) */
+.report-table.report-tb thead tr:last-child th:nth-child(-n+3),
+.report-table.report-tb tbody td:nth-child(-n+3) { text-align:start; }
+
+/* الأعمدة المالية: محاذاة نهاية السطر + أرقام جداولية + فصل بصري واضح */
+.report-table.report-tb tbody td:nth-child(n+4),
+.report-table.report-tb tfoot td:nth-child(n+4) {
+    text-align:end;
+    direction:ltr;            /* الأرقام اللاتينية تبقى مقروءة داخل خلية RTL */
+    unicode-bidi:embed;
+    font-variant-numeric:tabular-nums;
+    white-space:nowrap;
+}
+
+/* الحسابات التجميعية (لها أبناء): خلفية محايدة خفيفة + خط أثقل + شريط جانبي */
+.report-table.report-tb tr.report-row-group > td {
+    background:#FAFAFF; font-weight:800; color:#1F2937;
+}
+.report-table.report-tb tr.report-row-group > td:first-child { border-inline-start:3px solid #6D5BD0; }
+
+/* الحسابات التفصيلية (قابلة للترحيل): بلا تظليل */
+.report-table.report-tb tr.report-row-detail > td { font-weight:400; }
+
+/* صفوف الإجماليات: فصل واضح عن صفوف الحسابات */
+.report-table.report-tb tfoot tr.report-total-row > td {
+    background:#F3F4F6; font-weight:800; border-top:2px solid #6D5BD0;
+}
+/* السطر الأخير = الإجمالي العام (الجذور) */
+.report-table.report-tb tfoot tr.report-total-row:last-child > td {
+    background:#EEF2FF; color:#312E81; font-size:.95rem;
+}
+/* خط فاصل بين كل حساب رئيسي وما بعده */
+.report-table.report-tb tbody tr.report-row-group { border-top:1px solid #D1D5DB; }
+
+@media print {
+    .report-table.report-tb tr.report-group-row th { background:#EDE9FE !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .report-table.report-tb tr.report-row-group > td { background:#FAFAFF !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .report-table.report-tb tfoot tr.report-total-row > td { background:#F3F4F6 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .report-table.report-tb tbody tr { page-break-inside:avoid; }
+    .report-table.report-tb thead { display:table-header-group; }   /* تكرار الرأس على كل صفحة */
+}
+/* طباعة تقارير عامة — إخفاء Chrome عند الطباعة، إظهار المحتوى المنسق فقط */
+@media print{
+  .mud-appbar, .mud-drawer, .erp-topnav, .mud-dialog-actions{ display:none !important; }
+  .report-popup{ box-shadow:none !important; border:none !important; }
+  .report-table{ font-size:9pt !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   معيار موحّد لعرض مستويات الحسابات الأربعة — ألوان/أحجام/سماكات ثابتة لكل مستوى
+   مصدر القيم: ERPSystem.Application.Reporting.AccountLevelStyle (نفس القيم في PDF)
+     • المستوى الأول  (الجد)          : #174A7E · 16px · 700
+     • المستوى الثاني (الأب)          : #247653 · 14px · 600
+     • المستوى الثالث (الحفيد)        : #65518A · 13px · 500
+     • المستوى الرابع (ابن الحفيد)    : #8A4A18 · 12px · 450
+     • acct-lvl-5 (مسار دفاعي فقط)    : #4B5563 · 11px · 400  (خارج الحد — التصميم يمنعه)
+   اللون ليس الوسيلة الوحيدة: المسافات البادئة وعمود «المستوى» ورمز الحساب تبقى ظاهرة.
+   ══════════════════════════════════════════════════════════════════════════ */
+.acct-lvl-1 { color:#174A7E !important; font-size:16px; font-weight:700; }
+.acct-lvl-2 { color:#247653 !important; font-size:14px; font-weight:600; }
+.acct-lvl-3 { color:#65518A !important; font-size:13px; font-weight:500; }
+.acct-lvl-4 { color:#8A4A18 !important; font-size:12px; font-weight:450; }
+.acct-lvl-5 { color:#4B5563 !important; font-size:11px; font-weight:400; }
+
+/* داخل الجداول: الحفاظ على التفاف رمز الحساب كما هو (المسافات البادئة لا تُطوى) */
+.report-table td.acct-lvl-1, .report-table td.acct-lvl-2,
+.report-table td.acct-lvl-3, .report-table td.acct-lvl-4,
+.report-table td.acct-lvl-5 { white-space:pre-wrap; }
+
+/* شجرة الحسابات: العقدة تحمل مستوى الحساب ⇒ يورّث اسم الحساب اللون والحجم */
+.acct-node .mud-treeview-item-content { line-height:1.6; }
+.acct-node .acct-code { font-weight:inherit; opacity:.95; }
+.acct-node .acct-name { font-weight:inherit; }
+
+/* قائمة اختيار الحساب (شاشة القيد اليومي): المسار الهرمي ظاهر مع لون/حجم مستوى الحساب */
+.acct-pick-row { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.acct-pick-row .acct-code { font-variant-numeric:tabular-nums; }
+.acct-pick-path { font-size:.78rem; color:#6B7280; }
+
+@media print {
+  .acct-lvl-1 { font-size:14px !important; }
+  .acct-lvl-2 { font-size:12.5px !important; }
+  .acct-lvl-3 { font-size:11.5px !important; }
+  .acct-lvl-4 { font-size:11px !important; }
+  .acct-lvl-5 { font-size:10.5px !important; }
+  .acct-lvl-1, .acct-lvl-2, .acct-lvl-3, .acct-lvl-4, .acct-lvl-5 {
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+}
+/* ===== طباعة إيصال نقطة البيع: إظهار الإيصال فقط عند الطباعة ===== */
+@media print {
+    body * { visibility: hidden !important; }
+
+    /* إبطال تموضع/تحويل نافذة MudBlazor بالكامل حتى يُطبع الإيصال أعلى الصفحة */
+    .mud-dialog-container, .mud-dialog, .mud-overlay,
+    .mud-dialog-title, .mud-dialog-content, .mud-dialog-actions {
+        position: static !important;
+        transform: none !important;
+        overflow: visible !important;
+        background: none !important;
+        box-shadow: none !important;
+        width: auto !important;
+        max-width: none !important;
+        max-height: none !important;
+        border: none !important;
+    }
+
+    .pos-receipt, .pos-receipt * { visibility: visible !important; }
+    .pos-receipt {
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        font-size: 12px !important;
+        color: #000 !important;
+    }
+    /* مقاس 58mm: يثبّت عرض الطباعة على عرض الورق الفعلي */
+    .pos-receipt.pos-receipt-58 { max-width: 58mm !important; width: 58mm !important; }
+}
+/* ── ورديات الكاشير (Shift Reconciliation) ── */
+.shift-card { border:1px solid var(--erp-border, #d8dbe4); border-radius:12px; padding:18px; background:#fff; }
+.shift-kv { margin-bottom:6px; }
+.shift-summary { border-collapse:collapse; width:auto; min-width:340px; }
+.shift-summary th, .shift-summary td { border:1px solid var(--erp-border, #d8dbe4); padding:6px 12px; text-align:start; }
+.shift-summary .sum-sign { text-align:center; color:#64748B; font-weight:600; width:28px; }
+.shift-summary .sum-row th { font-weight:700; background:#EEF2FF; }
+.shift-variance { font-weight:700; font-size:1.05rem; }
+.variance-ok   { color:#16A34A; }
+.variance-short{ color:#DC2626; }
+.variance-over { color:#F97316; }
+tr.variance-short{ background:#FEE2E2; }
+tr.variance-over { background:#FFF4E0; }
+
+/* =====================================================================
+   مركز المساعدة (Help Center) — زر «؟» + لوحة جانبية منبثقة فوق الواجهة
+   ---------------------------------------------------------------------
+   الزاوية العلوية، خلفية معتمة قابلة للنقر، لوحة بعرض 420px على نفس
+   الاتجاه البصري للموضوع البنفسجي (أسطح بيضاء، حدود خفيفة، ظل ناعم).
+   ===================================================================== */
+
+/* زر الفتح: ثابت في الزاوية العلوية اليمنى للشاشة الرئيسية (خارج تدفق الصف)،
+   وفي نقطة البيع يبقى ضمن صف الأيقونات الحالي (Embedded). */
+.erp-help-toggle { position: fixed; top: 12px; right: 12px; z-index: 1410; flex-shrink: 0; }
+.erp-help-toggle--embedded { position: static; top: auto; right: auto; z-index: auto; flex-shrink: 0; }
+.erp-help-toggle--hidden { display: none; }
+
+/* زر «تنزيل التطبيق»: بجوار زر المساعدة (يساراً منه) بنفس الارتفاع،
+   ويتبع نفس سلوك المساعدة في وضع نقطة البيع (Embedded). */
+.erp-download-toggle { position: fixed; top: 12px; right: 58px; z-index: 1410; flex-shrink: 0; }
+.erp-download-toggle--embedded { position: static; top: auto; right: auto; z-index: auto; flex-shrink: 0; }
+.erp-download-toggle--hidden { display: none; }
+
+/* الخلفية المعتمة — فوق شريط التطبيق (z-index 1300) وتحت اللوحة */
+.erp-help-overlay {
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.28);
+    z-index: 1390;
+}
+
+/* اللوحة الجانبية — ارتفاع كامل، مثبتة أعلى اليمين في اتجاه RTL */
+.erp-help-panel {
+    position: fixed; top: 0; bottom: 0;
+    right: 0;
+    width: 420px; max-width: 100%;
+    background: #FFFFFF;
+    border-left: 1px solid var(--erp-border);
+    box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18);
+    z-index: 1400;
+    display: flex; flex-direction: column;
+    animation: erp-help-slide-in .18s ease;
+    overflow: hidden;
+}
+
+@keyframes erp-help-slide-in {
+    from { transform: translateX(-7px); opacity: 0.5; }
+    to   { transform: none; opacity: 1; }
+}
+
+/* رأس اللوحة */
+.erp-help-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 16px;
+    background: linear-gradient(90deg, #F5F3FF 0%, #EDE9FE 100%);
+    border-bottom: 1px solid #DDD6FE;
+}
+.erp-help-header-title { display: flex; align-items: center; gap: 10px; }
+.erp-help-close { flex-shrink: 0; }
+
+/* حقل البحث الفوري */
+.erp-help-search { padding: 10px 16px; }
+.erp-help-search-input { width: 100%; }
+
+/* جسم اللوحة — قابل للتمرير */
+.erp-help-body {
+    flex: 1 1 auto;
+    overflow-y: auto; overflow-x: hidden;
+    padding: 4px 16px 24px;
+}
+
+/* قسم قابل للطي */
+.erp-help-section {
+    border: 1px solid var(--erp-border);
+    border-radius: 12px;
+    margin: 6px 0 10px;
+    background: #FFFFFF;
+}
+.erp-help-section-head {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0; background: transparent; cursor: pointer; text-align: start;
+    font-size: .92rem; font-weight: 800; color: #1F2937;
+}
+.erp-help-section-head:hover { background: #F5F3FF; }
+.erp-help-chevron { color: #6D5BD0; }
+.erp-help-section-title { flex: 1 1 auto; text-align: start; }
+.erp-help-section-body { padding: 6px 12px 12px; }
+
+/* بطاقة موضوع داخل القسم */
+.erp-help-topic {
+    border: 1px solid #E9E7F7;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin: 0 0 10px;
+    background: #FDFDFF;
+}
+.erp-help-topic-title { font-weight: 800; color: #4C1D95; margin-bottom: 8px; }
+
+/* فقرة تعريفية داخل الموضوع */
+.erp-help-block { margin: 4px 0 10px; }
+.erp-help-block--concept {
+    border-inline-start: 3px solid #C4B5FD;
+    background: #F7F5FF;
+    padding: 6px 10px;
+    border-radius: 8px;
+}
+.erp-help-block-label {
+    display: inline-block;
+    font-size: .75rem; font-weight: 700;
+    color: #6D5BD0;
+    margin-bottom: 4px;
+}
+.erp-help-p { margin: 0 0 8px; font-size: .875rem; line-height: 1.75; color: #374151; }
+.erp-help-p:last-child { margin-bottom: 0; }
+
+/* لا نتائج */
+.erp-help-empty {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 40px 12px; text-align: center;
+    color: var(--erp-muted);
+}
+
+/* شاشات ضيقة: اللوحة بعرض كامل وبدون إزاحة */
+@media (max-width: 640px) {
+    .erp-help-panel { right: 0; left: 0; width: auto; max-width: none; border-inline-start: none; }
+}
+
+/* الطباعة: لا تُطبع أجزاء مركز المساعدة */
+@media print {
+    .erp-help-overlay, .erp-help-panel { display: none !important; }
+}
+
+/* ── شجرة الحسابات: عرض الرصيد بجوار اسم الحساب (RTL) ── */
+.acct-bal {
+    font-weight: 600;
+    color: #0F766E;
+    white-space: nowrap;
+}
+/* الحسابات التجميعية (لها أبناء) — رصيدها مجمَّع من الأبناء بلا ازدواجية */
+.acct-bal-agg {
+    color: #1D4ED8;
+}
+.acct-note {
+    color: #6B7280;
+    line-height: 1.7;
+}
+.acct-flat-nature {
+    color: #6B7280;
+    font-size: .8rem;
+    margin-inline-start: .35rem;
+}
+

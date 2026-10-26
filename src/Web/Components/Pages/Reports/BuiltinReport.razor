@@ -1,0 +1,311 @@
+@page "/reports/builtin/{Key}"
+@attribute [Authorize(Roles = "Reports")]
+@using ERPSystem.Application.DTOs.Reports
+@using ERPSystem.Application.DTOs.Accounts
+<ModuleGuard ModuleKey="Reports">
+@inject IReportService ReportService
+@inject IStringLocalizer<SharedResources> Loc
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@inject ISystemSettingsService Settings
+@inject IAccountService AccountsService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* ═══════════════════════════════════════════════════════════════════════════════
+   صفحة عرض عامة لأي تقرير من فهرس التقارير (ReportsCatalog) عبر مفتاحه:
+   نفس المحرّك (IReportService.GetReportAsync) ونفس العرض/التصدير (ReportTable/ReportPopup/
+   ExportReportExcel + مسار PDF الموحّد) — لا نظام تقارير موازٍ، ولا تصميم جديد.
+   تُستخدم من اللوحة الرئيسية /reports بروابط /reports/builtin/{key}.
+   ═══════════════════════════════════════════════════════════════════════════════ *@
+
+<PageTitle>@_title - @Loc["AppName"]</PageTitle>
+<PageHeader Title="@_title" Icon="@Icons.Material.Filled.Assessment" />
+
+@if (_def is null)
+{
+    <MudAlert Severity="Severity.Warning" Class="ma-4">@Loc["ReportNotFound"] <b>@Key</b></MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Style="border:1px solid #E5E7EB">
+        <MudText Typo="@Typo.subtitle2" Class="mb-2">@Loc["GenerateReport"]</MudText>
+        <MudGrid AlignItems="AlignItems.End" Spacing="3">
+            @if (HasParam(ReportParamKind.DateRange))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudDatePicker @bind-Date="_from" Label="@Loc["FromDate"]" Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudDatePicker @bind-Date="_to" Label="@Loc["ToDate"]" Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+                </MudItem>
+            }
+            else if (HasParam(ReportParamKind.Date))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudDatePicker @bind-Date="_asOf" Label="@Loc["AsOfDate"]" Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+                </MudItem>
+            }
+            @if (HasParam(ReportParamKind.Party))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="_party" Label="@Loc["SearchVoucherPlaceholder"]" Variant="Variant.Outlined" />
+                </MudItem>
+            }
+            @if (HasParam(ReportParamKind.DocNumber))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="_docNumber" Label="@Loc["VoucherNumber"]" Variant="Variant.Outlined" />
+                </MudItem>
+            }
+            @if (HasParam(ReportParamKind.EntryNumber))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField @bind-Value="_entryNumber" Label="@Loc["VoucherJournalEntry"]" Variant="Variant.Outlined" />
+                </MudItem>
+            }
+            @if (HasParam(ReportParamKind.Status))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect @bind-Value="_status" Label="@Loc["Status"]" T="string" Variant="Variant.Outlined" Clearable="true">
+                        <MudSelectItem T="string" Value="@((string?)null)">@Loc["All"]</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("1")">@Loc["VoucherStatusDraft"] (1)</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("2")">@Loc["VoucherStatusApproved"] (2)</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("3")">@Loc["VoucherStatusPosted"] (3)</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("4")">@Loc["VoucherStatusCancelled"] (4)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            }
+            @if (HasParam(ReportParamKind.Account))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" Label="@Loc["Account"]" Value="@_accountId"
+                               ValueChanged="@(v => _accountId = v)" Variant="Variant.Outlined">
+                        <MudSelectItem T="string" Value="@((string?)null)">@Loc["All"]</MudSelectItem>
+                        @foreach (var acc in _accountChoices)
+                        {
+                            <MudSelectItem T="string" Value="@acc.Id.ToString()">@acc.Label</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
+            @if (HasParam(ReportParamKind.IncludeZero))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudCheckBox T="bool" Label="@Loc["ShowZeroBalances"]" Value="_includeZero"
+                                 ValueChanged="@(v => _includeZero = v)" />
+                </MudItem>
+            }
+            @if (HasParam(ReportParamKind.LevelsOnly))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudCheckBox T="bool" Label="@Loc["LevelsOnly"]" Value="_levelsOnly"
+                                 ValueChanged="@(v => _levelsOnly = v)" />
+                </MudItem>
+            }
+            <MudItem xs="12" sm="6" md="3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="GenerateAsync"
+                           Disabled="_loading" FullWidth="true" StartIcon="@Icons.Material.Filled.Search">
+                    @Loc["GenerateReport"]
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_loading)
+    {
+        <MudPaper Elevation="0" Class="pa-8 d-flex justify-center">
+            <MudProgressCircular Indeterminate="true" Size="Size.Large" />
+        </MudPaper>
+    }
+    else if (_table is null)
+    {
+        <MudPaper Elevation="0" Class="pa-6">
+            <MudText Align="Align.Center" Style="color:#6B7280">@Loc["SelectDateRange"]</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudToolBar Class="mb-2">
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="OpenPopupAsync"
+                       StartIcon="@Icons.Material.Filled.Visibility" Class="mr-2">@Loc["View"] / @Loc["Print"]</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="ExportExcelAsync"
+                       StartIcon="@Icons.Material.Filled.GridOn" Class="mr-2">Excel</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ExportPdfAsync"
+                       StartIcon="@Icons.Material.Filled.PictureAsPdf">PDF</MudButton>
+            <MudSpacer />
+            <MudText Typo="Typo.caption" Class="muted-text">@_table.ParamSummary</MudText>
+        </MudToolBar>
+
+        @if (_table.Rows.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">@Loc["NoData"]</MudAlert>
+        }
+        else
+        {
+            <MudPaper Class="pa-4" Elevation="0" Style="background:#fff;border:1px solid #E5E7EB;overflow-x:auto">
+                <div class="report-print">
+                    <div class="report-header" style="display:flex;justify-content:space-between;border-bottom:2px solid #6D5BD0;padding-bottom:8px;margin-bottom:8px">
+                        <div>
+                            <b>@_brand</b> — @_table.TitleAr
+                            <br /><small>@_table.ParamSummary</small>
+                        </div>
+                        <small>@DateTime.Now.ToString("yyyy-MM-dd HH:mm")</small>
+                    </div>
+                    <ReportTable Table="_table" />
+                    @if (!string.IsNullOrEmpty(_table.FooterNote))
+                    {
+                        <div class="report-footer mt-2"><MudText Typo="Typo.caption">@_table.FooterNote</MudText></div>
+                    }
+                </div>
+            </MudPaper>
+        }
+    }
+}
+</ModuleGuard>
+
+@code {
+    /// <summary>مفتاح التقرير كما هو في ReportsCatalog (يأتي من المسار: /reports/builtin/{key}).</summary>
+    [Parameter] public string Key { get; set; } = string.Empty;
+
+    private ReportDef? _def;
+    private string _title = string.Empty;
+    private string _brand = string.Empty;
+    private GenericReportTable? _table;
+    private bool _loading;
+
+    private DateTime? _from = DateTime.Today.AddMonths(-1);
+    private DateTime? _to = DateTime.Today;
+    private DateTime? _asOf = DateTime.Today;
+    private string? _party;
+    private string? _docNumber;
+    private string? _entryNumber;
+    private string? _status;
+    private string? _accountId;
+    private bool _includeZero;
+    private bool _levelsOnly;
+    private List<(Guid Id, string Label)> _accountChoices = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _def = ReportsCatalog.All.FirstOrDefault(d => d.Key == Key);
+        _title = _def is null ? Key : Title(_def);
+
+        try
+        {
+            var s = await Settings.GetAsync();
+            _brand = s.AppDisplayName ?? Loc["AppName"];
+        }
+        catch { _brand = Loc["AppName"]; }
+
+        if (_def is not null && HasParam(ReportParamKind.Account))
+        {
+            try
+            {
+                var tree = await AccountsService.GetAccountTreeAsync();
+                _accountChoices = new List<(Guid, string)>();
+                FlattenAccounts(tree, _accountChoices);
+            }
+            catch { _accountChoices = new(); }
+        }
+    }
+
+    private bool HasParam(ReportParamKind kind) => _def is not null && _def.Params.Contains(kind);
+
+    /// <summary>اسم التقرير من الفهرس نفسه (عربي/إنجليزي حسب ثقافة الواجهة) — لا أسماء مكرّرة في الصفحة.</summary>
+    private static string Title(ReportDef def)
+        => System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en" ? def.TitleEn : def.TitleAr;
+
+    private static void FlattenAccounts(List<AccountDto> source, List<(Guid Id, string Label)> target)
+    {
+        foreach (var acc in source)
+        {
+            target.Add((acc.Id, new string('\u00A0', Math.Max(0, acc.Level - 1) * 3) + acc.Code + " - " + acc.NameAr));
+            if (acc.Children.Count > 0) FlattenAccounts(acc.Children, target);
+        }
+    }
+
+    /// <summary>يبني معاملات المحرّك من حقول الفلاتر المعروضة فقط (لا شيء مخفي ولا افتراضات صامتة).</summary>
+    private Dictionary<string, string?> BuildPars()
+    {
+        var pars = new Dictionary<string, string?>();
+
+        if (HasParam(ReportParamKind.DateRange))
+        {
+            if (_from.HasValue) pars["from"] = _from.Value.ToString("yyyy-MM-dd");
+            if (_to.HasValue) pars["to"] = _to.Value.ToString("yyyy-MM-dd");
+        }
+        else if (HasParam(ReportParamKind.Date) && _asOf.HasValue)
+        {
+            pars["asOf"] = _asOf.Value.ToString("yyyy-MM-dd");
+        }
+
+        if (HasParam(ReportParamKind.Party) && !string.IsNullOrWhiteSpace(_party)) pars["party"] = _party!.Trim();
+        if (HasParam(ReportParamKind.DocNumber) && !string.IsNullOrWhiteSpace(_docNumber)) pars["docNumber"] = _docNumber!.Trim();
+        if (HasParam(ReportParamKind.EntryNumber) && !string.IsNullOrWhiteSpace(_entryNumber)) pars["entryNumber"] = _entryNumber!.Trim();
+        if (HasParam(ReportParamKind.Status) && !string.IsNullOrWhiteSpace(_status)) pars["status"] = _status!.Trim();
+        if (HasParam(ReportParamKind.Account) && !string.IsNullOrWhiteSpace(_accountId)) pars["accountId"] = _accountId;
+        if (HasParam(ReportParamKind.IncludeZero)) pars["includeZero"] = _includeZero ? "true" : "false";
+        if (HasParam(ReportParamKind.LevelsOnly)) pars["levelsOnly"] = _levelsOnly ? "true" : "false";
+
+        return pars;
+    }
+
+    private async Task GenerateAsync()
+    {
+        if (_def is null) return;
+
+        _loading = true;
+        try
+        {
+            // نفس محرّك التقارير المستخدم في مركز التقارير ومسارات التصدير (لا منطق عرض موازٍ).
+            _table = await ReportService.GetReportAsync(_def.Key, BuildPars());
+            await OpenPopupAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    /// <summary>عرض/طباعة/تصدير بنفس نافذة التقارير القائمة (ReportPopup: ReportTable + Excel + PDF/طباعة).</summary>
+    private async Task OpenPopupAsync()
+    {
+        if (_table is null) return;
+
+        var parameters = new DialogParameters
+        {
+            ["Table"] = _table,
+            ["Brand"] = _brand
+        };
+
+        await Dialogs.ShowAsync<ReportPopup>(_table.TitleAr, parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true });
+    }
+
+    /// <summary>Excel بلا أي مكتبة جديدة: نفس ReportService.ExportReportExcel المستخدم في مركز التقارير.</summary>
+    private async Task ExportExcelAsync()
+    {
+        if (_table is null) return;
+
+        var bytes = ReportService.ExportReportExcel(_table);
+        var fileName = string.IsNullOrWhiteSpace(_table.ExportFileName) ? $"{Key}.xlsx" : $"{_table.ExportFileName}.xlsx";
+        var b64 = Convert.ToBase64String(bytes);
+        await JS.InvokeVoidAsync("eval",
+            $"var a=document.createElement('a');a.href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}';a.download='{fileName}';a.click();");
+    }
+
+    /// <summary>PDF: مسار التصدير الموحّد نفسه الذي أُضيف في هذه المهمة (نفس المحرّك ونفس الفلاتر).</summary>
+    private void ExportPdfAsync()
+    {
+        var query = BuildPars().Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => Uri.EscapeDataString(kv.Key) + "=" + Uri.EscapeDataString(kv.Value!))
+            .ToList();
+        query.Insert(0, "key=" + Uri.EscapeDataString(Key));
+        Nav.NavigateTo("/export/report/pdf?" + string.Join("&", query), forceLoad: true);
+    }
+}

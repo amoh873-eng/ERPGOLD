@@ -1,0 +1,97 @@
+﻿@page "/sales/returns"
+@attribute [Authorize(Roles = "Sales")]
+<ModuleGuard ModuleKey="Sales">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة مردودات المبيعات *@
+
+<PageTitle>@Loc["SalesReturns"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["SalesReturns"]" Icon="@Icons.Material.Filled.Replay" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+        @Loc["AddReturn"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["TotalReturns", _returns.Count]</MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_returns.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">
+            @Loc["NoReturns"]
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_returns" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["ReturnNumber"]</MudTh>
+                <MudTh>@Loc["OriginalInvoice"]</MudTh>
+                <MudTh>@Loc["Customer"]</MudTh>
+                <MudTh>@Loc["Date"]</MudTh>
+                <MudTh>@Loc["Total"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.ReturnNumber</MudTd>
+                <MudTd>@context.InvoiceNumber</MudTd>
+                <MudTd>@context.CustomerName</MudTd>
+                <MudTd>@context.ReturnDate.ToString("yyyy-MM-dd")</MudTd>
+                <MudTd>@context.TotalAmount.ToString("N2")</MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                   Color="Color.Info" OnClick="@(e => ViewReturn(context))" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+    private List<SalesReturnDto> _returns = new();
+
+    [Inject] private ISalesReturnService ReturnService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try { _returns = await ReturnService.GetReturnsAsync(); }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<SalesReturnFormDialog>(
+            Loc["AddReturnTitle"], new DialogParameters(),
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["ReturnSaved"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task ViewReturn(SalesReturnDto salesReturn)
+    {
+        var full = await ReturnService.GetByIdAsync(salesReturn.Id);
+        if (full is null) { Snackbar.Add(Loc["ReturnLoadFailed"], Severity.Error); return; }
+        var parameters = new DialogParameters { ["SalesReturn"] = full };
+        await DialogService.ShowAsync<SalesReturnDetailsDialog>(
+            Loc["ReturnDetailsTitle", full.ReturnNumber], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+    }
+}
+</ModuleGuard>

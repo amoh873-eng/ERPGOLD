@@ -1,0 +1,145 @@
+@page "/accounting/reconciliation"
+@attribute [Authorize(Roles = "Accounting,Admin,SuperAdmin")]
+<ModuleGuard ModuleKey="Accounting">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* تقرير مطابقة الحسابات الرقابية مع السجلات المساعدة (2026-10-25) — **قراءة فقط**.
+   لا يسوّي أي فرق: يعرض الرقابي والتفصيلي والفرق ومصدره، ويسرد الحركات غير المُنسَبة بالاسم. *@
+
+<PageTitle>@Loc["AccountingReconciliation"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["AccountingReconciliation"]" Subtitle="@Loc["AccountingReconciliationSubtitle"]"
+            Icon="@Icons.Material.Filled.Rule" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+               Disabled="@_isLoading" OnClick="LoadAsync">
+        @Loc["Refresh"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">
+        @Loc["UnattributedTotal"]: @(_report?.TotalUnattributedAmount.ToString("N2") ?? "—")
+    </MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1" Class="pa-3 mb-3">
+    <MudText Typo="Typo.body2" Class="muted-text">@Loc["AccountingReconciliationHint"]</MudText>
+</MudPaper>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_report is null)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">@Loc["NoData"]</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_report.Rows" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["Account"]</MudTh>
+                <MudTh>@Loc["ControlBalanceLabel"]</MudTh>
+                <MudTh>@Loc["DetailBalanceLabel"]</MudTh>
+                <MudTh>@Loc["Difference"]</MudTh>
+                <MudTh>@Loc["ExplainedLabel"]</MudTh>
+                <MudTh>@Loc["UnexplainedLabel"]</MudTh>
+                <MudTh>@Loc["Status"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.AccountCode - @context.AccountNameAr</MudTd>
+                <MudTd>@context.ControlBalance.ToString("N2")</MudTd>
+                <MudTd>@context.DetailBalance.ToString("N2")</MudTd>
+                <MudTd>@context.Difference.ToString("N2")</MudTd>
+                <MudTd>@context.ExplainedAmount.ToString("N2")</MudTd>
+                <MudTd>@context.UnexplainedAmount.ToString("N2")</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@StatusColor(context)">
+                        @context.StatusAr
+                    </MudChip>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@if (_report is not null && _report.Rows.Count > 0)
+{
+    <MudPaper Elevation="1" Class="pa-3 mt-3">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">@Loc["ReconciliationNotes"]</MudText>
+        @foreach (var row in _report.Rows.Where(r => !string.IsNullOrWhiteSpace(r.Note)))
+        {
+            <MudText Typo="Typo.body2" Class="muted-text">@row.AccountCode: @row.Note</MudText>
+        }
+        @foreach (var note in _report.Notes)
+        {
+            <MudText Typo="Typo.caption" Class="muted-text">@note</MudText>
+        }
+    </MudPaper>
+}
+
+@if (_report is not null)
+{
+    <MudPaper Elevation="1" Class="mt-3">
+        <MudText Typo="Typo.subtitle2" Class="pa-3">@Loc["UnattributedLines"] (@_report.UnattributedControlLines.Count)</MudText>
+        @if (_report.UnattributedControlLines.Count == 0)
+        {
+            <MudAlert Severity="Severity.Success" Class="m-3">@Loc["UnattributedNone"]</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_report.UnattributedControlLines" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>@Loc["Account"]</MudTh>
+                    <MudTh>@Loc["JournalEntryNumber"]</MudTh>
+                    <MudTh>@Loc["EntryDate"]</MudTh>
+                    <MudTh>@Loc["JournalEntryType"]</MudTh>
+                    <MudTh>@Loc["ReferenceDocument"]</MudTh>
+                    <MudTh>@Loc["Amount"]</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AccountCode</MudTd>
+                    <MudTd>@context.EntryNumber</MudTd>
+                    <MudTd>@context.EntryDate.ToString("yyyy-MM-dd")</MudTd>
+                    <MudTd>@context.EntryTypeNameAr</MudTd>
+                    <MudTd>@(string.IsNullOrWhiteSpace(context.Reference) ? "—" : context.Reference)</MudTd>
+                    <MudTd>@context.SignedAmount.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Inject] private ISubLedgerReconciliationService ReconciliationService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private bool _isLoading = true;
+    private SubLedgerReconciliationDto? _report;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _report = await ReconciliationService.GetReportAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"{Loc["LoadError"]} {ErrorLocalizer.Resolve(Loc, ex)}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static Color StatusColor(SubLedgerReconciliationRowDto row)
+        => row.UnexplainedAmount != 0m ? Color.Error
+            : row.Difference != 0m ? Color.Warning
+            : Color.Success;
+}
+</ModuleGuard>

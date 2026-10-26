@@ -1,0 +1,97 @@
+﻿@page "/journal-entries"
+@attribute [Authorize(Roles = "Accounting")]
+<ModuleGuard ModuleKey="Accounting">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة القيود اليومية - قائمة القيود (دفتر اليومية) *@
+
+<PageTitle>@Loc["JournalEntries"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["JournalEntries"]" Icon="@Icons.Material.Filled.Book" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+        @Loc["AddJournalEntry"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["TotalJournalEntries", _entries.Count]</MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_entries.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">
+            @Loc["NoJournalEntries"]
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_entries" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["JournalEntryNumber"]</MudTh>
+                <MudTh>@Loc["Date"]</MudTh>
+                <MudTh>@Loc["Type"]</MudTh>
+                <MudTh>@Loc["Description"]</MudTh>
+                <MudTh>@Loc["Debit"]</MudTh>
+                <MudTh>@Loc["Credit"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.EntryNumber</MudTd>
+                <MudTd>@context.EntryDate.ToString("yyyy-MM-dd")</MudTd>
+                <MudTd>@context.EntryTypeNameAr</MudTd>
+                <MudTd>@context.Description</MudTd>
+                <MudTd>@context.TotalDebit.ToString("N2")</MudTd>
+                <MudTd>@context.TotalCredit.ToString("N2")</MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                   Color="Color.Info" OnClick="@(e => ViewEntry(context))" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+    private List<JournalEntryDto> _entries = new();
+
+    [Inject] private IJournalEntryService JournalService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try { _entries = await JournalService.GetEntriesAsync(); }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<JournalEntryFormDialog>(
+            Loc["AddJournalEntry"], new DialogParameters(),
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["JournalEntrySaved"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task ViewEntry(JournalEntryDto entry)
+    {
+        var parameters = new DialogParameters { ["Entry"] = entry };
+        await DialogService.ShowAsync<JournalEntryDetailsDialog>(
+            Loc["JournalEntryDetailsTitle", entry.EntryNumber], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+    }
+}
+</ModuleGuard>

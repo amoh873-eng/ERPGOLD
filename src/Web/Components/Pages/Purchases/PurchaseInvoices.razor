@@ -1,0 +1,89 @@
+﻿@page "/purchases/invoices"
+@attribute [Authorize(Roles = "Purchases")]
+<ModuleGuard ModuleKey="Purchases">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة فواتير المشتريات *@
+
+<PageTitle>@Loc["PurchaseInvoices"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["PurchaseInvoices"]" Icon="@Icons.Material.Filled.ReceiptLong" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+        @Loc["NewInvoice"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["TotalInvoices", _invoices.Count]</MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_invoices.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">@Loc["NoPurchaseInvoices"]</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_invoices" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["InvoiceNumber"]</MudTh>
+                <MudTh>@Loc["Supplier"]</MudTh>
+                <MudTh>@Loc["Date"]</MudTh>
+                <MudTh>@Loc["Type"]</MudTh>
+                <MudTh>@Loc["Total"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.InvoiceNumber</MudTd>
+                <MudTd>@context.SupplierName</MudTd>
+                <MudTd>@context.InvoiceDate.ToString("yyyy-MM-dd")</MudTd>
+                <MudTd>@context.InvoiceTypeNameAr</MudTd>
+                <MudTd>@context.TotalAmount.ToString("N2")</MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+    private List<PurchaseInvoiceDto> _invoices = new();
+
+    [Inject] private IPurchaseInvoiceService InvoiceService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try { _invoices = await InvoiceService.GetInvoicesAsync(); }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<PurchaseInvoiceFormDialog>(
+            Loc["AddPurchaseInvoiceTitle"], new DialogParameters(),
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true)
+        {
+            // D-06: إشارة نجاح صريحة تحمل رقم الفاتورة ⇒ لا غموض ولا إعادة إرسال.
+            var savedNumber = result?.Data as string;
+            Snackbar.Add(string.IsNullOrWhiteSpace(savedNumber)
+                    ? Loc["InvoiceSaved"]
+                    : $"{Loc["InvoiceSaved"]} — {savedNumber}",
+                Severity.Success);
+            await LoadAsync();
+        }
+    }
+}
+</ModuleGuard>

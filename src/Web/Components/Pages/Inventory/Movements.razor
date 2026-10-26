@@ -1,0 +1,172 @@
+﻿@page "/inventory/movements"
+@attribute [Authorize(Roles = "Inventory")]
+<ModuleGuard ModuleKey="Inventory">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة حركات المخزون - سجل الحركات (وارد/صادر/تحويل/تسوية) بين المخازن *@
+
+<PageTitle>@Loc["Movements"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["Movements"]" Icon="@Icons.Material.Filled.SwapVert" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">
+        @Loc["AddMovement"]
+    </MudButton>
+    <MudButton Variant="Variant.Outlined"
+               Color="Color.Secondary"
+               StartIcon="@Icons.Material.Filled.SwapHoriz"
+               OnClick="OpenTransferDialog"
+               Class="ms-2">
+        @Loc["TransferBetweenWarehouses"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["TotalMovements", _movements.Count]</MudText>
+</MudToolBar>
+
+@* P7/G1: تنبيه دائم — هذه الشاشة مسار كميّ/تكلفة بلا قيد محاسبي، فلا تُستخدم للأرصدة الافتتاحية المالية *@
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+    @Loc["OpeningBalanceOfficialPathHint"]
+    <MudLink Href="/accounting/opening-balances">@Loc["OpeningBalances"]</MudLink>
+</MudAlert>
+
+<MudTabs Class="mb-4" Rounded="true" Outlined="true" Position="Position.Top">
+    <MudTabPanel Text="@Loc["MovementLog"]" Icon="@Icons.Material.Filled.ReceiptLong">
+        <MudPaper Elevation="1" Class="mt-4">
+            @if (_isLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Class="my-4" />
+            }
+            else if (_movements.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Class="m-4">
+                    @Loc["NoMovements"]
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_movements" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>@Loc["Date"]</MudTh>
+                        <MudTh>@Loc["Reference"]</MudTh>
+                        <MudTh>@Loc["Item"]</MudTh>
+                        <MudTh>@Loc["Warehouse"]</MudTh>
+                        <MudTh>@Loc["MovementType"]</MudTh>
+                        <MudTh>@Loc["Qty"]</MudTh>
+                        <MudTh>@Loc["UnitCost"]</MudTh>
+                        <MudTh>@Loc["Total"]</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.MovementDate.ToString("yyyy-MM-dd")</MudTd>
+                        <MudTd>@context.ReferenceNumber</MudTd>
+                        <MudTd>@context.ItemCode - @context.ItemNameAr</MudTd>
+                        <MudTd>@context.WarehouseNameAr</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small" Color="@GetTypeColor(context)">@context.MovementTypeNameAr</MudChip>
+                        </MudTd>
+                        <MudTd Class="@(context.Quantity >= 0 ? "stock-in" : "stock-out")">
+                            @(context.Quantity >= 0 ? "+" : "")@context.Quantity.ToString("N0")
+                        </MudTd>
+                        <MudTd>@context.UnitCost.ToString("N2")</MudTd>
+                        <MudTd>@context.Total.ToString("N2")</MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+                    </PagerContent>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudTabPanel>
+
+    <MudTabPanel Text="@Loc["StockBalances"]" Icon="@Icons.Material.Filled.Storefront">
+        <MudPaper Elevation="1" Class="mt-4">
+            @if (_isLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Class="my-4" />
+            }
+            else if (_balances.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Class="m-4">
+                    @Loc["NoStockBalances"]
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_balances" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>@Loc["Item"]</MudTh>
+                        <MudTh>@Loc["Warehouse"]</MudTh>
+                        <MudTh>@Loc["Qty"]</MudTh>
+                        <MudTh>@Loc["UnitCost"]</MudTh>
+                        <MudTh>@Loc["InventoryValue"]</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.ItemCode - @context.ItemNameAr</MudTd>
+                        <MudTd>@context.WarehouseNameAr</MudTd>
+                        <MudTd Class="@(context.Quantity >= 0 ? "stock-in" : "stock-out")">
+                            @context.Quantity.ToString("N0")
+                        </MudTd>
+                        <MudTd>@context.UnitCost.ToString("N2")</MudTd>
+                        <MudTd>@context.TotalValue.ToString("N2")</MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+                    </PagerContent>
+                </MudTable>
+            }
+        </MudPaper>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private bool _isLoading = true;
+    private List<StockMovementDto> _movements = new();
+    private List<StockBalanceDto> _balances = new();
+
+    [Inject] private IStockMovementService MovementService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _movements = await MovementService.GetMovementsAsync();
+            _balances = await MovementService.GetStockBalancesAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private static Color GetTypeColor(StockMovementDto m) => m.Quantity >= 0
+        ? Color.Success
+        : Color.Error;
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters { ["MovementService"] = MovementService };
+        var dialog = await DialogService.ShowAsync<MovementFormDialog>(
+            Loc["AddMovementTitle"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["MovementSaved"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task OpenTransferDialog()
+    {
+        var parameters = new DialogParameters { ["MovementService"] = MovementService };
+        var dialog = await DialogService.ShowAsync<TransferDialog>(
+            Loc["TransferBetweenWarehouses"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["TransferSaved"], Severity.Success); await LoadAsync(); }
+    }
+}
+
+</ModuleGuard>

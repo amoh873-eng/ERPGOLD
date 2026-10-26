@@ -1,0 +1,321 @@
+@inherits LayoutComponentBase
+
+@* 
+MudRTLProvider: تفعيل اتجاه RTL للغة العربية في MudBlazor 8
+(استُبدل RightToLeft بـ MudThemeProvider في v7 وأصبح MudRTLProvider في v8).
+*@
+<MudRTLProvider RightToLeft="true">
+<MudThemeProvider Theme="_theme" IsDarkMode="false" />
+<MudPopoverProvider />
+
+@* 
+MudDialogProvider: مزود النوافذ المنبثقة (Modals) لكل تطبيق MudBlazor.
+*@
+<MudDialogProvider />
+
+@* 
+MudSnackbarProvider: مزود الإشعارات (Toast) لعرض رسائل النجاح/الخطأ.
+*@
+<MudSnackbarProvider />
+
+@*
+MudLayout: التخطيط الرئيسي للصفحة.
+يضم شريط علوي (AppBar) ومنطقة المحتوى (Body) مع الشريط الجانبي.
+*@
+<MudLayout>
+    @* الشريط العلوي: الشعار + القائمة العلوية + الإشعارات + قائمة المستخدم *@
+    <MudAppBar Elevation="0" Dense="true" Style="padding-top:24px; height:auto;">
+        <div style="display:flex; flex-direction:column; width:100%; gap:6px; padding:18px 0 6px; margin-top:16px;">
+            @* الصف الأول: الشعار في الوسط + الجرس والخروج يمين — مُنزل 16px لتجاوز شريط المتصفح/البحث *@
+            <div style="display:flex; align-items:center; width:100%;">
+                <div style="flex:1;"></div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    @if (!string.IsNullOrEmpty(_logoUrl))
+                    { <img src="@_logoUrl" alt="logo" style="height:36px;max-width:160px;object-fit:contain" /> }
+                    else
+                    { <MudIcon Icon="@Icons.Material.Filled.Layers" Style="color:var(--erp-primary); font-size:2rem;" /> }
+                    <div style="display:flex; flex-direction:column; line-height:1.1;">
+                        <MudText Typo="Typo.h6" Style="font-weight:800; color:var(--erp-primary); margin:0; line-height:1;">@(_displayName ?? Loc["BrandName"])</MudText>
+                        <MudText Typo="Typo.caption" Style="font-weight:700; color:#F472B6; letter-spacing:3px; margin:0;">ERP</MudText>
+                    </div>
+                </div>
+                <div style="flex:1; display:flex; justify-content:flex-end; align-items:center; gap:6px;">
+                    @* ── زر المساعدة «؟» — الزاوية العلوية اليمنى (أول عنصر في مجموعة الأزرار) ── *@
+                    <HelpCenter />
+                    @* ── المدة المتبقية — بجانب رمز الإعدادات (TopNav كانت تعرضها بجانب الصلاحيات — الآن مكررة هنا للوضوح) ── *@
+                    @if (!string.IsNullOrWhiteSpace(_subText))
+                    {
+                        <span title="@_subTitle" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:.78rem;font-weight:800;border:1px solid @_subBorder;background:@_subBg;color:@_subColor;white-space:nowrap">
+                            <MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Small" Style="@($"color:{_subColor};font-size:1rem")" />
+                            @_subText
+                        </span>
+                    }
+                    @* ── زر الإعدادات — خلفية بنفسجية واضحة ── *@
+                    <MudIconButton Icon="@Icons.Material.Filled.Settings" Color="Color.Default" Size="Size.Small" Style="background:#DDD6FE;border:1px solid #C4B5FD;border-radius:10px;color:#4C1D95;" Title="@Loc["Settings"]" Href="/settings" />
+                    @* ── جرس الإشعارات — عداد غير المقروء + قائمة منسدلة (Part A) ── *@
+                    <MudMenu AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Class="erp-notif-menu">
+                        <ActivatorContent>
+                            <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Default" Size="Size.Small" Style="background:#F3F4F6;border-radius:10px;" Title="@Loc["Notifications"]" OnClick="async () => await LoadNotificationsAsync()">
+                                @if (_unreadCount > 0)
+                                {
+                                    <MudBadge Content="@_unreadCount" Color="Color.Error" Overlap="true" Rounded="true" />
+                                }
+                            </MudIconButton>
+                        </ActivatorContent>
+                        <ChildContent>
+                            <div style="width:340px; padding:10px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <MudText Typo="Typo.subtitle2" Style="font-weight:700;">@Loc["Notifications"]</MudText>
+                                    @if (_unreadCount > 0)
+                                    {
+                                        <MudButton Size="Size.Small" Dense="true" Color="Color.Primary" OnClick="async () => await MarkAllReadAsync()">@Loc["MarkAllRead"]</MudButton>
+                                    }
+                                </div>
+                                @if (_recentNotifications.Count == 0)
+                                {
+                                    <MudText Typo="Typo.body2" Class="pos-muted" Style="padding:12px 0;">@Loc["NoNotifications"]</MudText>
+                                }
+                                else
+                                {
+                                    foreach (var n in _recentNotifications)
+                                    {
+                                        <MudMenuItem OnClick="() => OpenNotification(n)" Style="@NotifMenuItemStyle(n)">
+                                            <div style="padding:4px 0;">
+                                                <div style="font-weight:700;">@n.Title</div>
+                                                <div style="font-size:.8rem; color:var(--erp-muted);">@n.Message</div>
+                                            </div>
+                                        </MudMenuItem>
+                                    }
+                                }
+                            </div>
+                        </ChildContent>
+                    </MudMenu>
+                    <MudMenu AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+                        <ActivatorContent>
+                            <MudAvatar Color="Color.Primary" Size="Size.Small" Style="cursor:pointer;">
+                                <MudIcon Icon="@Icons.Material.Filled.Person" />
+                            </MudAvatar>
+                        </ActivatorContent>
+                        <ChildContent>
+                            <AuthorizeView>
+                                <Authorized>
+                                    <MudMenuItem OnClick="Logout">
+                                        <MudIcon Icon="@Icons.Material.Filled.Logout" Class="mr-2" />
+                                        @Loc["Logout"]
+                                    </MudMenuItem>
+                                </Authorized>
+                                <NotAuthorized>
+                                    <MudMenuItem Href="/login">
+                                        <MudIcon Icon="@Icons.Material.Filled.Login" Class="mr-2" />
+                                        @Loc["Login"]
+                                    </MudMenuItem>
+                                </NotAuthorized>
+                            </AuthorizeView>
+                        </ChildContent>
+                    </MudMenu>
+                </div>
+            </div>
+            @* الصف الثاني: القوائم الذهبية تحت الشعار *@
+            <div style="display:flex; justify-content:center; border-top:1px solid var(--erp-border); padding-top:8px;">
+                <TopNav />
+            </div>
+        </div>
+    </MudAppBar>
+
+    @* منطقة المحتوى - Body — مُنزل 2 سم (≈75px) مع الشريط *@
+    <MudMainContent Style="padding-top:75px;">
+        <MudContainer MaxWidth="MaxWidth.False" Class="px-4 pt-4 pb-2">
+            @Body
+        </MudContainer>
+        @* فوتر النظام — يظهر فقط في قسم المبيعات *@
+        @if (Nav.Uri.Contains("/sales", StringComparison.OrdinalIgnoreCase))
+        {
+            <MudContainer MaxWidth="MaxWidth.False" Class="px-4 pb-4">
+                <MudPaper Elevation="0" Class="pa-3 mt-4 d-flex justify-center align-center" Style="background:#fff;border:1px solid var(--erp-border);border-radius:12px;">
+                    <MudText Typo="Typo.caption" Style="color:var(--erp-muted);">
+                        © @DateTime.Now.Year @(_displayName ?? Loc["BrandName"]) — نظام ERP المحاسبي — جميع الحقوق محفوظة
+                        @if (!string.IsNullOrWhiteSpace(_supportContact)) { <span> — تواصل: @_supportContact</span> }
+                    </MudText>
+                </MudPaper>
+            </MudContainer>
+        }
+    </MudMainContent>
+</MudLayout>
+</MudRTLProvider>
+
+@code {
+    [Inject] private IStringLocalizer<SharedResources> Loc { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private ERPSystem.Application.Interfaces.ISystemSettingsService SettingsService { get; set; } = default!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
+    [Inject] private IStaffNotificationService NotifService { get; set; } = default!;
+    [Inject] private Microsoft.Extensions.DependencyInjection.IServiceScopeFactory ScopeFactory { get; set; } = default!;
+    private string? _displayName;
+    private string? _logoUrl;
+    private string? _primaryHex;
+    private string? _supportContact;
+    private string? _subText, _subTitle; private string _subBg="#F9FAFB", _subColor="#374151", _subBorder="#E5E7EB";
+    private string? _userId;
+    private int _unreadCount;
+    private List<ERPSystem.Application.DTOs.Notifications.NotificationDto> _recentNotifications = new();
+    protected override async Task OnInitializedAsync()
+    {
+        // مهم: لا ننفّذ أي استعلامات قاعدة بيانات هنا عمداً.
+        // جميع مكوّنات الرندر الواحد (التخطيط MainLayout + الصفحة مثل لوحة التحكم)
+        // تبدأ تهيئتها في نفس الوقت، وكلها تتقاسم نسخة واحدة من AppDbContext (Scoped).
+        // أي استعلامين متزامنين على نفس السياق يُرميان خطأ
+        // "A second operation was started on this context instance..." الذي كان يظهر
+        // على لوحة التحكم. لذلك تؤجَّل استعلامات قاعدة البيانات إلى ما بعد أول رندر
+        // (OnAfterRenderAsync) لتُنفَّذ بعد انتهاء استعلامات الصفحة وبشكلٍ متسلسل.
+        await Task.CompletedTask;
+    }
+
+    /// <summary>تحميل إعدادات النظام (الاسم، الشعار، اللون، مدة الترخيص) — مؤجَّل بعد أول رندر لتجنّب تداخل DbContext.</summary>
+    private async Task LoadSettingsAsync()
+    {
+        // استعلامات الإعدادات تُنفَّذ داخل نطاق DI مستقل ليحصل على نسخة AppDbContext
+        // خاصة به، فلا يتعارض مع استعلامات الصفحة الجارية على سياق الدائرة المشترك.
+        using var scope = ScopeFactory.CreateScope();
+        var settingsService = scope.ServiceProvider.GetRequiredService<ERPSystem.Application.Interfaces.ISystemSettingsService>();
+        try
+        {
+            var s = await settingsService.GetAsync();
+            _displayName = s.AppDisplayName;
+            _logoUrl = s.LogoUrl;
+            _primaryHex = s.PrimaryColorHex;
+            _supportContact = s.SupportContactInfo;
+            var target = s.NextRenewalDate != default ? s.NextRenewalDate : s.LicenseExpiryDate;
+            if (target != null && target != default)
+            {
+                var days = (target.Value.Date - DateTime.UtcNow.Date).TotalDays;
+                _subTitle = string.Format(Loc["SubExpires"].Value, target.Value);
+                if (days < 0) { _subText = string.Format(Loc["SubExpiredAgo"].Value, Math.Ceiling(-days)); _subBg="#FEE2E2"; _subColor="#991B1B"; _subBorder="#FECACA"; }
+                else if (days <= 3) { _subText = string.Format(Loc["SubRemainingDays"].Value, Math.Ceiling(days)); _subBg="#FEE2E2"; _subColor="#991B1B"; _subBorder="#FECACA"; }
+                else if (days <= 10) { _subText = string.Format(Loc["SubRemainingDays"].Value, Math.Ceiling(days)); _subBg="#FEF3C7"; _subColor="#92400E"; _subBorder="#FDE68A"; }
+                else { _subText = string.Format(Loc["SubEndsOn"].Value, target.Value); _subBg="#F0FDF4"; _subColor="#065F46"; _subBorder="#BBF7D0"; }
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>يقرأ معرّف المستخدم الحالي (مفتاح AspNetUsers.Id) لاستعلام إشعاراته.</summary>
+    private async Task LoadCurrentUserAsync()
+    {
+        try
+        {
+            var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+            _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                      ?? auth.User.Identity?.Name;
+        }
+        catch { _userId = null; }
+    }
+
+    /// <summary>يجلب عداد غير المقروء + أحدث الإشعارات للمستخدم الحالي.</summary>
+    private async Task LoadNotificationsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_userId)) { _unreadCount = 0; _recentNotifications = new(); return; }
+        // نطاق DI مستقل لكل تحميل إشعارات لضمان عدم التشارك في AppDbContext مع الصفحة.
+        using var scope = ScopeFactory.CreateScope();
+        var notifService = scope.ServiceProvider.GetRequiredService<IStaffNotificationService>();
+        try
+        {
+            _unreadCount = await notifService.GetUnreadCountAsync(_userId);
+            _recentNotifications = await notifService.GetRecentAsync(_userId, 20);
+        }
+        catch { /* تجاهل أخطاء الإشعارات حتى لا تعطّل الواجهة */ }
+    }
+
+    /// <summary>فتح إشعار: تعليمه كمقروء ثم تنقّل إلى رابطه إن وُجد.</summary>
+    private async void OpenNotification(ERPSystem.Application.DTOs.Notifications.NotificationDto n)
+    {
+        if (!n.IsRead)
+        {
+            try { await NotifService.MarkAsReadAsync(n.Id); n.IsRead = true; if (_unreadCount > 0) _unreadCount--; }
+            catch { }
+        }
+        if (!string.IsNullOrWhiteSpace(n.LinkUrl))
+            Nav.NavigateTo(n.LinkUrl);
+    }
+
+    /// <summary>تحديد كل الإشعارات كمقروءة.</summary>
+    private async Task MarkAllReadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_userId)) return;
+        try
+        {
+            await NotifService.MarkAllAsReadAsync(_userId);
+            _unreadCount = 0;
+            foreach (var n in _recentNotifications) n.IsRead = true;
+        }
+        catch { }
+    }
+
+    /// <summary>ستايل بند إشعار: خلفية فاتحة للإشعار غير المقروء.</summary>
+    private string NotifMenuItemStyle(ERPSystem.Application.DTOs.Notifications.NotificationDto n)
+        => "white-space:normal; background:" + (n.IsRead ? "transparent" : "#EEF2FF") + ";";
+    [Inject] private Microsoft.JSInterop.IJSRuntime JS { get; set; } = default!;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) { return; }
+
+        // تحميل بيانات قاعدة البيانات هنا بعد أول رندر (وليس في OnInitializedAsync):
+        // يضمن هذا انتهاء استعلامات الصفحة الحالية أولاً، فلا يحدث أي تداخل على
+        // نسخة AppDbContext المشتركة (Scoped) أثناء تحميل لوحة التحكم.
+        try
+        {
+            await LoadCurrentUserAsync();
+            await LoadNotificationsAsync();
+            await LoadSettingsAsync();
+            StateHasChanged();
+            if (!string.IsNullOrWhiteSpace(_primaryHex))
+            {
+                await JS.InvokeVoidAsync("erpApplyPrimary", _primaryHex);
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>تسجيل الخروج عبر تحميل كامل للصفحة (طلب HTTP حقيقي) لضمان توفر HttpContext.</summary>
+    private void Logout() => Nav.NavigateTo("/logout", forceLoad: true);
+
+    /// <summary>
+    /// السمة الضوئية (Light) — هوية "عصري نظيف": لون أساسي بنفسجي #6D5BD0 وخلفية #F4F5F9.
+    /// هذه القيم متزامنة مع متغيرات :root في app.css.
+    /// </summary>
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#6D5BD0",
+            Secondary = "#6B7280",
+            Info = "#6D5BD0",
+            Success = "#10B981",
+            Warning = "#F59E0B",
+            Error = "#EF4444",
+            Background = "#F4F5F9",
+            Surface = "#FFFFFF",
+            AppbarBackground = "#FFFFFF",
+            AppbarText = "#1F2937",
+            DrawerBackground = "#FFFFFF",
+            DrawerText = "#1F2937",
+            TextPrimary = "#1F2937",
+            TextSecondary = "#6B7280",
+            ActionDefault = "#1F2937",
+            LinesDefault = "#E5E7EB",
+            LinesInputs = "#C7C5F4",
+            TableLines = "#E5E7EB"
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "10px"
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography
+            {
+                FontFamily = new[] { "Cairo", "Tajawal", "Roboto", "Arial", "sans-serif" },
+                FontSize = "0.9375rem"
+            }
+        }
+    };
+}

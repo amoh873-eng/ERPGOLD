@@ -1,0 +1,112 @@
+﻿@page "/permissions/roles"
+@attribute [Authorize(Roles = "Permissions")]
+<ModuleGuard ModuleKey="Permissions">
+@inject IStringLocalizer<SharedResources> Loc
+
+<PageTitle>@Loc["Roles"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["Roles"]" Icon="@Icons.Material.Filled.Badge" />
+
+<MudToolBar Class="mb-4">
+    <MudTextField @bind-Value="_newRoleName" Label="@Loc["RoleName"]" Variant="Variant.Outlined" Dense="true" Style="width:240px;" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateRole">@Loc["AddRole"]</MudButton>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_roles.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="ma-2">@Loc["NoRoles"]</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_roles" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["RoleName"]</MudTh>
+                <MudTh>@Loc["Users"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@DisplayLabel(context.Name)</MudTd>
+                <MudTd>@context.UsersCount</MudTd>
+                <MudTd>
+                    <AuthorizeView Roles="Admin,SuperAdmin" Context="auth">
+                        <MudIconButton Icon="@Icons.Material.Filled.Key" Size="Size.Small" Color="Color.Primary" OnClick="() => EditPermissions(context)" />
+                    </AuthorizeView>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteRole(context)" Disabled="@(context.Name == "Admin" || context.Name == "SuperAdmin")" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager RowsPerPageString="@Loc["RowsPerPage"]" InfoFormat="@Loc["PagerInfo"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+    private string _newRoleName = string.Empty;
+    private List<RoleDto> _roles = new();
+
+    [Inject] private IRoleService RoleService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private string DisplayLabel(string roleName)
+    {
+        // المفتاح الإنجليزي → التسمية العربية عبر Loc؛ إن لم توجد اترك الاسم كما هو (مثل Admin)
+        var localized = Loc[roleName];
+        return localized.ResourceNotFound ? roleName : localized.Value;
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try { _roles = await RoleService.GetRolesAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private async Task CreateRole()
+    {
+        if (string.IsNullOrWhiteSpace(_newRoleName)) return;
+        try
+        {
+            await RoleService.CreateRoleAsync(_newRoleName.Trim());
+            _newRoleName = string.Empty;
+            Snackbar.Add(Loc["RoleSaved"], Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task EditPermissions(RoleDto role)
+    {
+        var parameters = new DialogParameters { ["Role"] = role };
+        var dialog = await DialogService.ShowAsync<RoleVoucherPermissionsDialog>(Loc["VoucherPermissions"], parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+            await LoadAsync();
+    }
+
+    private async Task DeleteRole(RoleDto role)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["DeleteConfirmation"], Loc["DeleteConfirm"],
+            yesText: Loc["Delete"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+        try
+        {
+            await RoleService.DeleteRoleAsync(role.Id);
+            Snackbar.Add(Loc["RoleDeleted"], Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}
+</ModuleGuard>

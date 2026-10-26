@@ -1,0 +1,97 @@
+@using ERPSystem.Application.DTOs.Reports
+@inject IJSRuntime JS
+@inject ICustomReportService R2
+@inject IReportService R1
+<MudDialog>
+    <DialogContent>
+        <div class="report-popup">
+        @if (Table != null)
+        {
+            <div id="popup-report" class="report-print"><div class="report-header"><div><b>@Brand</b> — @Table.TitleAr<br/><small>@Table.ParamSummary@CurrencySuffix(Table)</small></div><small>تاريخ الطباعة: @DateTime.Now.ToString("yyyy-MM-dd HH:mm")</small></div>
+            <ReportTable Table="Table" />
+            @if(!string.IsNullOrEmpty(Table.FooterNote)){<div class="report-footer">@Table.FooterNote</div>}</div>
+        }
+        @if (Custom != null)
+        {
+            <div id="popup-custom" class="report-print"><div class="report-header" style="border-color:#10B981"><div><b>@Brand</b> — @Title<br/><small>@Param</small></div><small>تاريخ الطباعة: @DateTime.Now.ToString("yyyy-MM-dd HH:mm")</small></div>
+            <table class="report-table"><thead><tr>@foreach(var h in Custom.Columns){<th>@h</th>}</tr></thead><tbody>@foreach(var row in Custom.Rows){<tr>@foreach(var h in Custom.Columns){<td>@(row.TryGetValue(h, out var v)?v?.ToString():"")</td>}</tr>}</tbody></table></div>
+        }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Excel" Color="Color.Success" Variant="Variant.Outlined">Excel</MudButton>
+        <MudButton OnClick="Pdf" Color="Color.Primary" Variant="Variant.Outlined">PDF</MudButton>
+        <MudButton OnClick="Print" Color="Color.Info" Variant="Variant.Outlined">طباعة</MudButton>
+        <MudButton OnClick="Close" Color="Color.Default">إغلاق</MudButton>
+    </DialogActions>
+</MudDialog>
+@code{
+    [CascadingParameter] IMudDialogInstance MudDialog {get;set;}=default!;
+    [Parameter] public GenericReportTable? Table {get;set;}
+    [Parameter] public CustomReportResult? Custom {get;set;}
+    [Parameter] public string Brand {get;set;}="";
+    [Parameter] public string Title {get;set;}="";
+    [Parameter] public string Param {get;set;}="";
+
+    /// <summary>
+    /// رمز العملة المعتمدة (من إعدادات النظام — عرض فقط، لا تحويل) يُضاف إلى ترويسة التقرير
+    /// عندما يُعلن التقرير أنه مالي (<see cref="GenericReportTable.ShowCurrency"/>).
+    /// </summary>
+    private string _currency = "";
+    [Inject] private ISystemSettingsService Settings { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var s = await Settings.GetAsync();
+            var code = string.IsNullOrWhiteSpace(s.CurrencyCode) ? "JOD" : s.CurrencyCode.Trim().ToUpperInvariant();
+            _currency = ERPSystem.Domain.CurrencyLookup.SymbolFor(code) + " (" + code + ")";
+        }
+        catch { _currency = ""; }
+    }
+
+    /// <summary>لاحقة العملة في ترويسة التقرير (فارغة للتقارير غير المالية أو عند تعذّر قراءة الإعدادات).</summary>
+    private string CurrencySuffix(GenericReportTable? t)
+        => t?.ShowCurrency == true && !string.IsNullOrEmpty(_currency) ? " | العملة: " + _currency : "";
+    async Task Excel(){ if(Table!=null){var b=R1.ExportReportExcel(Table);var fn=string.IsNullOrWhiteSpace(Table.ExportFileName)?"report.xlsx":$"{Table.ExportFileName}.xlsx";await JS.InvokeVoidAsync("eval",$"var a=document.createElement('a');a.href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{Convert.ToBase64String(b)}';a.download='{fn}';a.click();");} else if(Custom!=null){var b=R2.ExportExcel(Custom, Title);await JS.InvokeVoidAsync("eval",$"var a=document.createElement('a');a.href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{Convert.ToBase64String(b)}';a.download='custom.xlsx';a.click();");} }
+    /// <summary>
+    /// ورقة أنماط مصغّرة تُحقن في نافذة الطباعة/PDF. النافذة الجديدة لا تحمّل app.css
+    /// (بسبب قاعدة طباعة إيصال نقطة البيع فيها التي تُخفي كل شيء ما عدا الإيصال)، فنُبقي هنا
+    /// ما يلزم تقرير ميزان المراجعة الهرمي: RTL + تجميع الأعمدة + تمييز التجميعي/التفصيلي
+    /// + محاذاة الأرقام الجدولية + حفظ الألوان عند الطباعة.
+    /// </summary>
+    private const string PrintCss =
+        "body{font-family:\"Cairo\",\"Tajawal\",Arial,sans-serif;margin:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+        + ".report-header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #6D5BD0;padding-bottom:8px;margin-bottom:12px;font-size:.95rem}"
+        + ".report-footer{margin-top:8px;font-size:.82rem;color:#374151}"
+        + "table{width:100%;border-collapse:collapse;font-size:.86rem}"
+        + "th,td{border:1px solid #E5E7EB;padding:6px 8px;text-align:center}"
+        + "th{background:#F9FAFB;font-weight:700}"
+        + "thead tr:last-child th:nth-child(-n+3),tbody td:nth-child(-n+3){text-align:start}"
+        + "tbody td:nth-child(n+4),tfoot td:nth-child(n+4){text-align:end;direction:ltr;unicode-bidi:embed;font-variant-numeric:tabular-nums;white-space:nowrap}"
+        + "tr.report-group-row th{background:#EDE9FE;color:#4C1D95;font-weight:800;border-bottom:2px solid #C4B5FD}"
+        + "tr.report-row-group>td{background:#FAFAFF;font-weight:800}"
+        + "tr.report-row-group>td:first-child{border-inline-start:3px solid #6D5BD0}"
+        + "tr.report-row-detail>td{font-weight:400}"
+        + "tfoot tr.report-total-row>td{background:#F3F4F6;font-weight:800;border-top:2px solid #6D5BD0}"
+        + "tfoot tr.report-total-row:last-child>td{background:#EEF2FF;color:#312E81}"
+        + "tbody tr{page-break-inside:avoid}thead{display:table-header-group}";
+
+    /// <summary>طباعة/PDF: نافذة مستقلة تحمل نفس ترويسة التقرير وجدوله (بالترتيب الهرمي إن وُجد).</summary>
+    async Task Pdf()
+    {
+        var id = Table != null ? "popup-report" : "popup-custom";
+        // التقارير العريضة (مثل ميزان المراجعة الهرمي) تُطبع أفقياً حسب إعداد التقرير.
+        var pageRule = Table?.Landscape == true ? "@page{size:landscape;}" : "";
+        var head = "<html dir=\"rtl\"><head><meta charset=\"utf-8\"><style>" + PrintCss + pageRule
+                 + "</style></head><body>";
+        var script = "var el=document.getElementById('" + id + "');if(el){var w=window.open('','_blank');"
+                   + "w.document.write('" + head + "'+el.innerHTML+'</body></html>');"
+                   + "w.document.close();w.print();}";
+        await JS.InvokeVoidAsync("eval", script);
+    }
+
+    async Task Print()=> await Pdf();
+    void Close()=> MudDialog.Cancel();
+}

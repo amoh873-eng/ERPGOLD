@@ -1,0 +1,63 @@
+@* حوار تفاصيل أسطر فاتورة مبيعات في «سجل ضريبة المبيعات» — المصدر: السطر (TaxRate/TaxAmount) *@
+@inject IStringLocalizer<SharedResources> Loc
+
+<MudDialog>
+    <DialogContent>
+        @if (Invoice is null)
+        {
+            <MudAlert Severity="Severity.Info">@Loc["NoData"]</MudAlert>
+        }
+        else
+        {
+            <MudGrid>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">@Loc["InvoiceNumber"]</MudText><MudText>@Invoice.InvoiceNumber</MudText></MudItem>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">@Loc["Customer"]</MudText><MudText>@Invoice.CustomerName</MudText></MudItem>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">@Loc["Date"]</MudText><MudText>@Invoice.InvoiceDate.ToString("yyyy-MM-dd")</MudText></MudItem>
+                <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">@Loc["TaxRates"]</MudText><MudText>@Invoice.TaxRates</MudText></MudItem>
+            </MudGrid>
+
+            @* تفاصيل الأسطر: الصنف، الكمية، السعر، الخصم، الصافي، نسبة الضريبة، مبلغ الضريبة، الإجمالي *@
+            <MudTable Items="Invoice.Lines" Hover="true" Dense="true" Elevation="1" Class="mt-3">
+                <HeaderContent>
+                    <MudTh>@Loc["Item"]</MudTh>
+                    <MudTh>@Loc["Qty"]</MudTh>
+                    <MudTh>@Loc["Price"]</MudTh>
+                    <MudTh>@Loc["DiscountAmount"]</MudTh>
+                    <MudTh>@Loc["NetBeforeTax"]</MudTh>
+                    <MudTh>@Loc["TaxRate"]</MudTh>
+                    <MudTh>@Loc["TaxAmount"]</MudTh>
+                    <MudTh>@Loc["Total"]</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.ItemCode - @context.ItemNameAr</MudTd>
+                    <MudTd>@context.Quantity.ToString("N0")</MudTd>
+                    <MudTd>@context.UnitPrice.ToString("N2")</MudTd>
+                    <MudTd>@context.Discount.ToString("N2")</MudTd>
+                    <MudTd>@context.Net.ToString("N2")</MudTd>
+                    <MudTd>@context.TaxRate.ToString("0.##")%</MudTd>
+                    <MudTd>@context.TaxAmount.ToString("N2")</MudTd>
+                    <MudTd>@context.Total.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudText Typo="Typo.body2" Class="mt-3">
+                @Loc["GrossTotal"]: @Invoice.ItemTotal.ToString("N2") —
+                @Loc["DiscountAmount"]: @Invoice.DiscountTotal.ToString("N2") —
+                @Loc["NetBeforeTax"]: @Invoice.NetTaxable.ToString("N2") —
+                @Loc["TaxAmount"]: @Invoice.TaxTotal.ToString("N2")
+            </MudText>
+            <MudText Typo="Typo.h6" Class="mt-1">@Loc["Total"]: @Invoice.TotalInclTax.ToString("N2")</MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="Color.Default">@Loc["Close"]</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public SalesTaxRegisterRow? Invoice { get; set; }
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+}

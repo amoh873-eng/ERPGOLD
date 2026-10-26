@@ -1,0 +1,119 @@
+using System.Data;
+using System.Data.Common;
+using ERPSystem.Application.DTOs.Reports;
+using ERPSystem.Application.Interfaces;
+using ERPSystem.Domain.Entities;
+using ERPSystem.Domain.Enums;
+using ERPSystem.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+namespace ERPSystem.Infrastructure.Services;
+public class CustomReportService : ICustomReportService
+{
+    private readonly AppDbContext _db;
+    private readonly IConfiguration _cfg;
+    private readonly IReportService _report;
+    public CustomReportService(AppDbContext db, IConfiguration cfg, IReportService report) { _db=db; _cfg=cfg; _report=report; }
+    public Task<List<CustomReportDefinition>> GetAllAsync(CancellationToken ct=default) => _db.Set<CustomReportDefinition>().OrderBy(x=>x.Name).ToListAsync(ct);
+    public Task<List<CustomReportDefinition>> GetEnabledAsync(CancellationToken ct=default) => _db.Set<CustomReportDefinition>().Where(x=>x.IsEnabled && !x.IsDeleted).OrderBy(x=>x.Name).ToListAsync(ct);
+    public Task<CustomReportDefinition?> GetByIdAsync(Guid id, CancellationToken ct=default) => _db.Set<CustomReportDefinition>().FirstOrDefaultAsync(x=>x.Id==id, ct);
+    public async Task<CustomReportDefinition> CreateAsync(CustomReportDefinition e, CancellationToken ct=default)
+    { if(string.IsNullOrWhiteSpace(e.Name)) throw new InvalidOperationException("Name required"); if(e.ReportType==CustomReportType.SqlQuery) ValidateSql(e.SqlQuery??""); e.Id=e.Id==Guid.Empty?Guid.NewGuid():e.Id; e.CreatedAt=DateTime.UtcNow; e.CreatedByOwnerAt=DateTime.UtcNow; _db.Set<CustomReportDefinition>().Add(e); await _db.SaveChangesAsync(ct); return e; }
+    public async Task<CustomReportDefinition> UpdateAsync(Guid id, Action<CustomReportDefinition> m, CancellationToken ct=default)
+    { var e=await _db.Set<CustomReportDefinition>().FirstOrDefaultAsync(x=>x.Id==id,ct)??throw new InvalidOperationException("Not found"); m(e); e.UpdatedAt=DateTime.UtcNow; if(e.ReportType==CustomReportType.SqlQuery) ValidateSql(e.SqlQuery??""); await _db.SaveChangesAsync(ct); return e; }
+    public async Task DeleteAsync(Guid id, CancellationToken ct=default)
+    { var e=await _db.Set<CustomReportDefinition>().FirstOrDefaultAsync(x=>x.Id==id,ct)??throw new InvalidOperationException("Not found"); e.IsDeleted=true; e.UpdatedAt=DateTime.UtcNow; await _db.SaveChangesAsync(ct); }
+    public async Task<CustomReportResult> ExecuteAsync(Guid id, Dictionary<string,object?> p, CancellationToken ct=default)
+    { var d=await GetByIdAsync(id,ct)??throw new InvalidOperationException("Not found"); if(!d.IsEnabled) throw new InvalidOperationException("Disabled"); if(d.ReportType==CustomReportType.ExistingReportVariant) return await ExecuteVariantAsync(d,p); return await ExecuteSqlAsync(d,p,ct); }
+    private async Task<CustomReportResult> ExecuteVariantAsync(CustomReportDefinition def, Dictionary<string,object?> p, CancellationToken ct=default)
+    { var k=def.ExistingReportKey??"TrialBalance"; DateTime from=p.TryGetValue("from",out var fv)&&DateTime.TryParse(fv?.ToString(),out var fd)?fd:DateTime.Today.AddMonths(-1); DateTime to=p.TryGetValue("to",out var tv)&&DateTime.TryParse(tv?.ToString(),out var td)?td:DateTime.Today; DateTime asOf=p.TryGetValue("asOf",out var av)&&DateTime.TryParse(av?.ToString(),out var ad)?ad:DateTime.Today;
+      if(k=="TrialBalance")
+      {
+        // توحيد مع التقرير الرئيسي: نفس خدمة الحسابات ونفس الجدول الهرمي (أب/ابن/حفيد)
+        // بلا منطق أرصدة مكرر هنا. الأسماء المكررة في الأعمدة (مدين/دائن ×3 مجموعات) تُفصَّل بعنوان المجموعة.
+        DateTime? tbFrom = p.TryGetValue("from", out var tbf) && DateTime.TryParse(tbf?.ToString(), out var tbfd) ? tbfd : (DateTime?)null;
+        DateTime? tbTo   = p.TryGetValue("to",   out var tbt) && DateTime.TryParse(tbt?.ToString(), out var tbtd) ? tbtd : (DateTime?)null;
+        Guid? tbRoot = p.TryGetValue("accountId", out var tab) && Guid.TryParse(tab?.ToString(), out var tabg) && tabg != Guid.Empty ? tabg : (Guid?)null;
+        bool tbZero = IsTrue(p, "includeZero");
+        bool tbLevels = IsTrue(p, "levelsOnly");
+        var table = await _report.GetTrialBalanceReportAsync(tbFrom, tbTo, tbRoot, tbZero, tbLevels);
+        var columns = QualifyTrialBalanceColumns(table);
+        var r = new CustomReportResult { Columns = columns };
+        foreach (var row in table.Rows) r.Rows.Add(MapRow(columns, row));
+        if (table.TotalsRows != null) foreach (var tr in table.TotalsRows) r.Rows.Add(MapRow(columns, tr));
+        return r;
+      }
+      if(k=="IncomeStatement"){var d=await _report.GetIncomeStatementAsync(from,to);var r=new CustomReportResult{Columns=new(){"Account","Amount","Type"}};foreach(var x in d.Revenues) r.Rows.Add(new(){["Account"]=x.AccountNameAr,["Amount"]=x.Amount,["Type"]="Revenue"});foreach(var x in d.Expenses) r.Rows.Add(new(){["Account"]=x.AccountNameAr,["Amount"]=x.Amount,["Type"]="Expense"});return r;} if(k=="BalanceSheet"){var d=await _report.GetBalanceSheetAsync(asOf);var r=new CustomReportResult{Columns=new(){"Account","Amount","Category"}};foreach(var x in d.Assets) r.Rows.Add(new(){["Account"]=x.AccountNameAr,["Amount"]=x.Amount,["Category"]="Asset"});foreach(var x in d.Liabilities) r.Rows.Add(new(){["Account"]=x.AccountNameAr,["Amount"]=x.Amount,["Category"]="Liability"});foreach(var x in d.Equity) r.Rows.Add(new(){["Account"]=x.AccountNameAr,["Amount"]=x.Amount,["Category"]="Equity"});return r;} throw new InvalidOperationException(k); }
+    // ── مساعدات توحيد ميزان المراجعة الهرمي (لتقارير ExistingReportVariant بمفتاح TrialBalance) ──
+
+    /// <summary>قراءة معامل منطقي (true/1/on) من قاموس معاملات التقرير.</summary>
+    private static bool IsTrue(Dictionary<string, object?> p, string name)
+    {
+        if (!p.TryGetValue(name, out var v) || v is null) return false;
+        var s = v.ToString()?.Trim();
+        return s is not null && (s.Equals("true", StringComparison.OrdinalIgnoreCase) || s == "1" || s.Equals("on", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// يفصل أسماء الأعمدة المكررة في ميزان المراجعة (مدين/دائن في ثلاث مجموعات) بعنوان مجموعته
+    /// حتى تصلح مفاتيح صفوف CustomReportResult.
+    /// </summary>
+    private static List<string> QualifyTrialBalanceColumns(GenericReportTable table)
+    {
+        var groupOf = new List<string?>(table.Headers.Count);
+        if (table.HeaderGroups is { Count: > 0 })
+        {
+            var idx = 0;
+            foreach (var g in table.HeaderGroups)
+                for (var i = 0; i < g.Span && idx < table.Headers.Count; i++, idx++)
+                    groupOf.Add(g.Title);
+            while (groupOf.Count < table.Headers.Count) groupOf.Add(null);
+        }
+        else
+        {
+            for (var i = 0; i < table.Headers.Count; i++) groupOf.Add(null);
+        }
+
+        var names = new List<string>(table.Headers.Count);
+        for (var i = 0; i < table.Headers.Count; i++)
+        {
+            var g = i < groupOf.Count ? groupOf[i] : null;
+            names.Add(i >= 3 && !string.IsNullOrWhiteSpace(g) ? table.Headers[i] + " (" + g + ")" : table.Headers[i]);
+        }
+        return names;
+    }
+
+    /// <summary>يحوّل صفًّا من جدول التقرير إلى صف مفاتيحه أسماء الأعمدة المؤهَّلة.</summary>
+    private static Dictionary<string, object?> MapRow(List<string> columns, List<string> row)
+    {
+        var d = new Dictionary<string, object?>(columns.Count);
+        for (var i = 0; i < columns.Count; i++) d[columns[i]] = i < row.Count ? row[i] : string.Empty;
+        return d;
+    }
+
+    private async Task<CustomReportResult> ExecuteSqlAsync(CustomReportDefinition def, Dictionary<string,object?> parameters, CancellationToken ct)
+    { var sql=def.SqlQuery??throw new InvalidOperationException("No SQL"); ValidateSql(sql); var allowed=GetAllowed(def.ParametersJson); var norm = parameters.ToDictionary(k=>k.Key, k=>k.Value, StringComparer.OrdinalIgnoreCase);
+      // ADO مشغّل-مستقل عبر اتصال DbContext الفعلي (يدعم SQL Server وPostgreSQL معاً).
+      var conn = _db.Database.GetDbConnection(); var wasClosed = conn.State!=ConnectionState.Open; if(wasClosed) await conn.OpenAsync(ct);
+      try {
+        await using var cmd = conn.CreateCommand(); cmd.CommandText=sql; cmd.CommandType=CommandType.Text;
+        foreach(var name in allowed){ object? v=null; norm.TryGetValue(name,out v); if(v is string s && string.IsNullOrWhiteSpace(s)) v=null; var p=cmd.CreateParameter(); p.ParameterName="@"+name; p.Value=v??DBNull.Value; cmd.Parameters.Add(p); }
+        using var reader=await cmd.ExecuteReaderAsync(ct); var result=new CustomReportResult(); for(int i=0;i<reader.FieldCount;i++) result.Columns.Add(reader.GetName(i)); while(await reader.ReadAsync(ct)){var row=new Dictionary<string,object?>(); foreach(var c in result.Columns) row[c]=reader[c] is DBNull?null:reader[c]; result.Rows.Add(row);} return result;
+      } finally { if(wasClosed && conn.State==ConnectionState.Open) await conn.CloseAsync(); } }
+    private static HashSet<string> GetAllowed(string? json)
+    { if(string.IsNullOrWhiteSpace(json) || json.Trim()=="[]") return new(); try{ using var doc=System.Text.Json.JsonDocument.Parse(json); if(doc.RootElement.ValueKind!=System.Text.Json.JsonValueKind.Array) return new(); var hs=new HashSet<string>(StringComparer.OrdinalIgnoreCase); foreach(var el in doc.RootElement.EnumerateArray()) if(el.TryGetProperty("name", out var pv) && pv.ValueKind==System.Text.Json.JsonValueKind.String) { var s=pv.GetString(); if(!string.IsNullOrWhiteSpace(s)) hs.Add(s.Trim()); } return hs; }catch{return new();} }
+    private static void ValidateSql(string sql)
+    { var s=sql.Trim(); if(s.Contains(';') && s.TrimEnd(';').Contains(';')) throw new InvalidOperationException("Multiple statements not allowed"); var u=s.ToUpperInvariant(); if(u.StartsWith("INSERT")||u.StartsWith("UPDATE")||u.StartsWith("DELETE")||u.StartsWith("DROP")||u.StartsWith("ALTER")||u.StartsWith("CREATE")||u.StartsWith("TRUNCATE")||u.StartsWith("EXEC")) throw new InvalidOperationException("Only SELECT allowed"); if(!u.StartsWith("SELECT") && !u.StartsWith("WITH")) throw new InvalidOperationException("Must start with SELECT"); }
+    public byte[] ExportExcel(CustomReportResult result, string sheetName="Report")
+    {
+        using var wb = new ClosedXML.Excel.XLWorkbook();
+        var ws = wb.Worksheets.Add(sheetName);
+        for (int i = 0; i < result.Columns.Count; i++) ws.Cell(1, i + 1).Value = result.Columns[i];
+        ws.Row(1).Style.Font.Bold = true;
+        for (int r = 0; r < result.Rows.Count; r++)
+            for (int c = 0; c < result.Columns.Count; c++)
+                ws.Cell(r + 2, c + 1).Value = result.Rows[r].TryGetValue(result.Columns[c], out var v) ? (v?.ToString() ?? "") : "";
+        ws.Columns().AdjustToContents();
+        using var ms = new MemoryStream(); wb.SaveAs(ms); return ms.ToArray();
+    }
+}

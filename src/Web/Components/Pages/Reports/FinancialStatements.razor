@@ -1,0 +1,168 @@
+﻿@page "/reports/financial-statements"
+@page "/financial-statements-legacy"
+@inject IStringLocalizer<SharedResources> Loc
+@attribute [Authorize(Roles = "Reports")]
+<ModuleGuard ModuleKey="Reports">
+
+@* ???? ??????? ???????: ????? ????? ?????????? ???????? *@
+
+<PageTitle>@Loc["FinancialStatements"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["FinancialStatements"]" Icon="@Icons.Material.Filled.InsertChart" />
+
+<MudTabs Rounded="true" Outlined="true" Position="Position.Top">
+    <MudTabPanel Text="@Loc["IncomeStatement"]" Icon="@Icons.Material.Filled.TrendingUp">
+        <MudGrid Class="mt-3 align-items-end">
+            <MudItem xs="6" sm="3">
+                <MudDatePicker @bind-Date="_incomeFrom" Label="@Loc["FromDate"]" Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudDatePicker @bind-Date="_incomeTo" Label="@Loc["ToDate"]" Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+            </MudItem>
+            <MudItem xs="12" sm="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadIncomeAsync" FullWidth="true">@Loc["View"]</MudButton>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudButton Variant="Variant.Outlined" Color="Color.Success"
+                           Href="@($"/export/income-statement/excel?from={(_incomeFrom ?? DateTime.Today):yyyy-MM-dd}&to={(_incomeTo ?? DateTime.Today):yyyy-MM-dd}")"
+                           StartIcon="@Icons.Material.Filled.Download" FullWidth="true">Excel</MudButton>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
+                           Href="@($"/export/income-statement/pdf?from={(_incomeFrom ?? DateTime.Today):yyyy-MM-dd}&to={(_incomeTo ?? DateTime.Today):yyyy-MM-dd}")"
+                           StartIcon="@Icons.Material.Filled.PictureAsPdf" FullWidth="true">PDF</MudButton>
+            </MudItem>
+        </MudGrid>
+
+        @if (_income is not null)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@Loc["Revenues"]</MudText>
+            <MudTable Items="_income.Revenues" Hover="true" Dense="true" Elevation="1">
+                <HeaderContent>
+                    <MudTh>@Loc["Account"]</MudTh>
+                    <MudTh>@Loc["Amount"]</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AccountCode - @context.AccountNameAr</MudTd>
+                    <MudTd>@context.Amount.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@Loc["Expenses"]</MudText>
+            <MudTable Items="_income.Expenses" Hover="true" Dense="true" Elevation="1">
+                <HeaderContent>
+                    <MudTh>@Loc["Account"]</MudTh>
+                    <MudTh>@Loc["Amount"]</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AccountCode - @context.AccountNameAr</MudTd>
+                    <MudTd>@context.Amount.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudPaper Elevation="1" Class="pa-3 mt-4">
+                <MudText Typo="Typo.body2">@Loc["TotalRevenue"]: @_income.TotalRevenue.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2">@Loc["TotalExpenses"]: @_income.TotalExpenses.ToString("N2")</MudText>
+                <MudText Typo="Typo.h6" Color="@(_income.NetIncome >= 0 ? Color.Success : Color.Error)">
+                    @Loc["NetIncome"]: @_income.NetIncome.ToString("N2")
+                </MudText>
+            </MudPaper>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="@Loc["BalanceSheet"]" Icon="@Icons.Material.Filled.AccountBalance">
+        <MudGrid Class="mt-3 align-items-end">
+            <MudItem xs="6" sm="3">
+                <MudDatePicker @bind-Date="_balanceAsOf" Label="@Loc["AsOfDate"]" Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+            </MudItem>
+            <MudItem xs="12" sm="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadBalanceAsync" FullWidth="true">@Loc["View"]</MudButton>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudButton Variant="Variant.Outlined" Color="Color.Success"
+                           Href="@($"/export/balance-sheet/excel?asOf={(_balanceAsOf ?? DateTime.Today):yyyy-MM-dd}")"
+                           StartIcon="@Icons.Material.Filled.Download" FullWidth="true">Excel</MudButton>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
+                           Href="@($"/export/balance-sheet/pdf?asOf={(_balanceAsOf ?? DateTime.Today):yyyy-MM-dd}")"
+                           StartIcon="@Icons.Material.Filled.PictureAsPdf" FullWidth="true">PDF</MudButton>
+            </MudItem>
+        </MudGrid>
+
+        @if (_balance is not null)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@Loc["Assets"]</MudText>
+            <MudTable Items="_balance.Assets" Hover="true" Dense="true" Elevation="1">
+                <HeaderContent><MudTh>@Loc["Account"]</MudTh><MudTh>@Loc["Amount"]</MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AccountCode - @context.AccountNameAr</MudTd>
+                    <MudTd>@context.Amount.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@Loc["Liabilities"]</MudText>
+            <MudTable Items="_balance.Liabilities" Hover="true" Dense="true" Elevation="1">
+                <HeaderContent><MudTh>@Loc["Account"]</MudTh><MudTh>@Loc["Amount"]</MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AccountCode - @context.AccountNameAr</MudTd>
+                    <MudTd>@context.Amount.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@Loc["Equity"]</MudText>
+            <MudTable Items="_balance.Equity" Hover="true" Dense="true" Elevation="1">
+                <HeaderContent><MudTh>@Loc["Account"]</MudTh><MudTh>@Loc["Amount"]</MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.AccountCode - @context.AccountNameAr</MudTd>
+                    <MudTd>@context.Amount.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudPaper Elevation="1" Class="pa-3 mt-4">
+                <MudText Typo="Typo.body2">@Loc["TotalAssets"]: @_balance.TotalAssets.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2">@Loc["TotalLiabilities"]: @_balance.TotalLiabilities.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2">@Loc["TotalEquity"]: @_balance.TotalEquity.ToString("N2")</MudText>
+                <MudText Typo="Typo.h6" Color="@(_balance.IsBalanced ? Color.Success : Color.Error)">
+                    @(_balance.IsBalanced ? Loc["BalanceSheetBalanced"] : Loc["BalanceSheetUnbalanced"])
+                </MudText>
+            </MudPaper>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private DateTime? _incomeFrom = new DateTime(DateTime.Today.Year, 1, 1);
+    private DateTime? _incomeTo = DateTime.Today;
+    private DateTime? _balanceAsOf = DateTime.Today;
+    private IncomeStatementDto? _income;
+    private BalanceSheetDto? _balance;
+
+    [Inject] private IReportService ReportService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadIncomeAsync();
+        await LoadBalanceAsync();
+    }
+
+    private async Task LoadIncomeAsync()
+    {
+        try { _income = await ReportService.GetIncomeStatementAsync(_incomeFrom ?? DateTime.Today, _incomeTo ?? DateTime.Today);
+            if(_income!=null){ var s=await Settings.GetAsync(); var brand=s.AppDisplayName??"ERP"; var headers=new[]{"الحساب","المبلغ"}; var rows=_income.Revenues.OrderBy(x=>x.AccountCode).Select(x=>new List<string>{x.AccountCode+" - "+x.AccountNameAr, x.Amount.ToString("N2")}).Concat(_income.Expenses.OrderBy(x=>x.AccountCode).Select(x=>new List<string>{x.AccountCode+" - "+x.AccountNameAr, x.Amount.ToString("N2")})).ToList(); var tbl=new GenericReportTable{ TitleAr="قائمة الدخل", Headers=headers.ToList(), Rows=rows, Totals=new List<string>{"الإجمالي", _income.NetIncome.ToString("N2")}, ParamSummary=$"من {(_incomeFrom?.ToString("yyyy-MM-dd")??"—")} إلى {(_incomeTo?.ToString("yyyy-MM-dd")??"—")}" }; await Dialogs.ShowAsync<ReportPopup>(tbl.TitleAr, new DialogParameters{["Table"]=tbl, ["Brand"]=brand}, new DialogOptions{ MaxWidth=MaxWidth.ExtraLarge, FullWidth=true }); }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task LoadBalanceAsync()
+    {
+        try { _balance = await ReportService.GetBalanceSheetAsync(_balanceAsOf ?? DateTime.Today);
+            if(_balance!=null){ var s=await Settings.GetAsync(); var brand=s.AppDisplayName??"ERP"; var headers=new[]{"الحساب","المبلغ"}; var rows=_balance.Assets.OrderBy(x=>x.AccountCode).Select(x=>new List<string>{x.AccountCode+" - "+x.AccountNameAr, x.Amount.ToString("N2")}).Concat(_balance.Liabilities.OrderBy(x=>x.AccountCode).Select(x=>new List<string>{x.AccountCode+" - "+x.AccountNameAr, x.Amount.ToString("N2")})).Concat(_balance.Equity.OrderBy(x=>x.AccountCode).Select(x=>new List<string>{x.AccountCode+" - "+x.AccountNameAr, x.Amount.ToString("N2")})).ToList(); var tbl=new GenericReportTable{ TitleAr="الميزانية", Headers=headers.ToList(), Rows=rows, Totals=new List<string>{"الإجمالي", (_balance.TotalAssets).ToString("N2")}, ParamSummary=$"حتى {(_balanceAsOf?.ToString("yyyy-MM-dd")??"—")}" }; await Dialogs.ShowAsync<ReportPopup>(tbl.TitleAr, new DialogParameters{["Table"]=tbl, ["Brand"]=brand}, new DialogOptions{ MaxWidth=MaxWidth.ExtraLarge, FullWidth=true }); }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+    [Inject] private IDialogService Dialogs {get;set;}=default!;
+    [Inject] private ISystemSettingsService Settings {get;set;}=default!;
+}
+</ModuleGuard>

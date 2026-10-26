@@ -1,0 +1,152 @@
+@page "/trial-balance-legacy"
+@attribute [Authorize(Roles = "Reports")]
+@using ERPSystem.Application.DTOs.Accounts
+<ModuleGuard ModuleKey="Reports">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* ميزان المراجعة الهرمي (أب/ابن/حفيد) — نفس خدمة مركز التقارير، مع فلاتر محلية تُمرَّر للتصدير *@
+
+<PageTitle>@Loc["TrialBalance"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["TrialBalance"]" Icon="@Icons.Material.Filled.Balance" />
+
+<MudPaper Elevation="1" Class="pa-3 mb-3">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6" md="2">
+            <MudDatePicker Label="من تاريخ" @bind-Date="_from" DateFormat="yyyy-MM-dd" Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudDatePicker Label="إلى تاريخ" @bind-Date="_to" DateFormat="yyyy-MM-dd" Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="Guid?" Label="الحساب (فرع)" @bind-Value="_accountId" Dense="true">
+                <MudSelectItem T="Guid?" Value="@((Guid?)null)">كل الحسابات</MudSelectItem>
+                @foreach (var a in _accounts)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)a.Id)">@a.Code — @a.NameAr</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudCheckBox T="bool" @bind-Checked="_includeZero" Label="إظهار الصفري" Dense="true" />
+        </MudItem>
+        <MudItem xs="6" sm="3" md="2">
+            <MudCheckBox T="bool" @bind-Checked="_levelsOnly" Label="مستويات التجميع فقط" Dense="true" />
+        </MudItem>
+        <MudItem xs="12" md="1">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync" Disabled="_isLoading">@Loc["Refresh"]</MudButton>
+        </MudItem>
+    </MudGrid>
+
+    <MudToolBar Class="pa-0 mt-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="OpenPopup"
+                   StartIcon="@Icons.Material.Filled.Visibility" Disabled="_table is null">عرض في نافذة</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Success" Href="@_excelUrl"
+                   StartIcon="@Icons.Material.Filled.Download" Class="ms-2" Disabled="_table is null">Excel</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="@_pdfUrl"
+                   StartIcon="@Icons.Material.Filled.PictureAsPdf" Class="ms-2" Disabled="_table is null">PDF</MudButton>
+        <MudSpacer />
+        @if (_table is not null)
+        {
+            <MudChip T="string" Size="Size.Small" Color="@(IsBalanced ? Color.Success : Color.Error)">
+                @(IsBalanced ? Loc["Balanced"] : Loc["Unbalanced"])
+            </MudChip>
+        }
+    </MudToolBar>
+</MudPaper>
+
+<MudPaper Elevation="1" Class="pa-3">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_table is null || _table.Rows.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">@Loc["NoJournalMovement"]</MudAlert>
+    }
+    else
+    {
+        @* نفس مكوّن العرض المستخدم في مركز التقارير (ReportTable) ⇒ تطابق الشاشة والطباعة حرفيًا *@
+        <div class="report-print">
+            <div class="report-header">
+                <div><b>@_brand</b> — @_table.TitleAr<br /><small>@_table.ParamSummary</small></div>
+                <small>تاريخ الطباعة: @DateTime.Now.ToString("yyyy-MM-dd HH:mm")</small>
+            </div>
+            <ReportTable Table="_table" />
+            @if (!string.IsNullOrEmpty(_table.FooterNote))
+            {
+                <div class="report-footer">@_table.FooterNote</div>
+            }
+        </div>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+
+    /// <summary>جدول ميزان المراجعة الهرمي — نفس الجدول المستخدم في مركز التقارير ومسارات التصدير.</summary>
+    private GenericReportTable? _table;
+
+    // ── فلاتر التقرير (تُمرَّر لنفس الخدمة ولروابط التصدير) ──
+    private DateTime? _from;
+    private DateTime? _to;
+    private Guid? _accountId;
+    private bool _includeZero;
+    private bool _levelsOnly;
+    private List<AccountDto> _accounts = new();
+    private string _excelUrl = "/export/trial-balance/excel";
+    private string _pdfUrl = "/export/trial-balance/pdf";
+
+    [Inject] private IReportService ReportService { get; set; } = default!;
+    [Inject] private IAccountService AccountService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private IDialogService Dialogs { get; set; } = default!;
+    [Inject] private ISystemSettingsService Settings { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    private string _brand = "";
+
+    /// <summary>حالة التوازن مستخرجة من ملاحظة التقرير المحتسبة في طبقة Application (لا إعادة احتساب هنا).</summary>
+    private bool IsBalanced => _table?.FooterNote is { } n && !n.Contains("غير متوازن");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { var s = await Settings.GetAsync(); _brand = s.AppDisplayName ?? "ERP"; } catch { }
+        try { _accounts = await AccountService.GetAllAccountsAsync(); } catch { }
+        await LoadAsync();
+    }
+
+    private void OpenPopup()
+    {
+        if (_table is null) return;
+        Dialogs.ShowAsync<ReportPopup>(_table.TitleAr, new DialogParameters { ["Table"] = _table, ["Brand"] = _brand },
+            new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true });
+    }
+
+    /// <summary>رابط تصدير يحمل نفس فلاتر الشاشة (Excel/PDF) — نفس العقد الذي يقرأه مسار التصدير.</summary>
+    private void RefreshExportUrls()
+    {
+        var q = new List<string>();
+        if (_from.HasValue) q.Add("from=" + _from.Value.ToString("yyyy-MM-dd"));
+        if (_to.HasValue) q.Add("to=" + _to.Value.ToString("yyyy-MM-dd"));
+        if (_accountId.HasValue) q.Add("accountId=" + _accountId.Value);
+        q.Add("includeZero=" + (_includeZero ? "true" : "false"));
+        q.Add("levelsOnly=" + (_levelsOnly ? "true" : "false"));
+        var qs = "?" + string.Join("&", q);
+        _excelUrl = "/export/trial-balance/excel" + qs;
+        _pdfUrl = "/export/trial-balance/pdf" + qs;
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            // بلا تواريخ: كامل السجل (نفس التعريف المحاسبي القديم للميزان) مع العرض الهرمي حسب المستويات.
+            _table = await ReportService.GetTrialBalanceReportAsync(_from, _to, _accountId, _includeZero, _levelsOnly);
+            RefreshExportUrls();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _isLoading = false; }
+    }
+}
+</ModuleGuard>

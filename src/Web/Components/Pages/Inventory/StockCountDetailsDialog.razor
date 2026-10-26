@@ -1,0 +1,40 @@
+﻿@* حوار عرض تفاصيل جرد دوري (قراءة فقط) *@
+@inject IStringLocalizer<SharedResources> Loc
+
+<MudDialog>
+    <DialogContent>
+        <MudTable Items="_count.Lines" Hover="true" Dense="true" Elevation="0">
+            <HeaderContent>
+                <MudTh>@Loc["Code"]</MudTh>
+                <MudTh>@Loc["Item"]</MudTh>
+                <MudTh>@Loc["SystemStock"]</MudTh>
+                <MudTh>@Loc["CountedQuantity"]</MudTh>
+                <MudTh>@Loc["Difference"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.ItemCode</MudTd>
+                <MudTd>@context.ItemNameAr</MudTd>
+                <MudTd>@context.SystemQuantity.ToString("N0")</MudTd>
+                <MudTd>@context.CountedQuantity.ToString("N0")</MudTd>
+                <MudTd Class="@(context.Difference != 0 ? "stock-out" : "")">
+                    @context.Difference.ToString("N0")
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">@Loc["Close"]</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public StockCountDto Count { get; set; } = new();
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private StockCountDto _count => Count;
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+}

@@ -1,0 +1,205 @@
+@page "/accounting/opening-balances"
+@attribute [Authorize(Roles = "Accounting,Admin,SuperAdmin")]
+<ModuleGuard ModuleKey="Accounting">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* دفعات الأرصدة الافتتاحية الرسمية — مسودة/ترحيل/عكس، عبر IOpeningBalanceService الموجود *@
+
+<PageTitle>@Loc["OpeningBalances"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["OpeningBalances"]" Subtitle="@Loc["OpeningBalancesSubtitle"]" Icon="@Icons.Material.Filled.AccountBalanceWallet" />
+
+<MudToolBar Class="mb-4">
+    <AuthorizeView Roles="Accounting,Admin,SuperAdmin" Context="obToolbar">
+        <Authorized>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       Disabled="@_isBusy" OnClick="OpenCreateDialog">
+                @Loc["NewOpeningBalance"]
+            </MudButton>
+        </Authorized>
+    </AuthorizeView>
+    <MudButton Variant="Variant.Outlined" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh"
+               Disabled="@_isBusy" OnClick="LoadAsync">
+        @Loc["Refresh"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["OpeningBalanceCount", _batches.Count]</MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_batches.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">@Loc["OpeningBalanceNoData"]</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_batches" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["OpeningBalanceFiscalYear"]</MudTh>
+                <MudTh>@Loc["Date"]</MudTh>
+                <MudTh>@Loc["Status"]</MudTh>
+                <MudTh>@Loc["DebitTotal"]</MudTh>
+                <MudTh>@Loc["CreditTotal"]</MudTh>
+                <MudTh>@Loc["JournalEntryNumber"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.FiscalYear</MudTd>
+                <MudTd>@context.EntryDate.ToString("yyyy-MM-dd")</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@context.StatusNameAr</MudChip>
+                </MudTd>
+                <MudTd>@context.TotalDebit.ToString("N2")</MudTd>
+                <MudTd>@context.TotalCredit.ToString("N2")</MudTd>
+                <MudTd>@(string.IsNullOrWhiteSpace(context.EntryNumber) ? "—" : context.EntryNumber)</MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Color="Color.Info"
+                                   Disabled="@_isBusy" OnClick="@(e => OpenDetails(context))" />
+                    @if (context.Status == (int)OpeningBalanceBatchStatus.Draft)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary"
+                                       Disabled="@_isBusy" OnClick="@(e => OpenEditDialog(context))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success"
+                                       Disabled="@_isBusy" OnClick="@(e => PostAsync(context))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       Disabled="@_isBusy" OnClick="@(e => DeleteAsync(context))" />
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    [Inject] private IOpeningBalanceService OpeningBalanceService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private AuthenticationStateProvider AuthState { get; set; } = default!;
+
+    private bool _isLoading = true;
+    private bool _isBusy;
+    private List<OpeningBalanceBatchDto> _batches = new();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try { _batches = await OpeningBalanceService.GetAllAsync(); }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ErrorLocalizer.Resolve(Loc, ex)}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private static Color StatusColor(int status) => status switch
+    {
+        (int)OpeningBalanceBatchStatus.Draft => Color.Default,
+        (int)OpeningBalanceBatchStatus.Posted => Color.Success,
+        (int)OpeningBalanceBatchStatus.Reversed => Color.Warning,
+        _ => Color.Default
+    };
+
+    private async Task<string> CurrentUserIdAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        return auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+               ?? auth.User.Identity?.Name ?? "system";
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<OpeningBalanceFormDialog>(
+            Loc["NewOpeningBalance"], new DialogParameters(),
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true)
+        {
+            Snackbar.Add(Loc["OpeningBalanceSaved"], Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task OpenEditDialog(OpeningBalanceBatchDto batch)
+    {
+        var parameters = new DialogParameters { [nameof(OpeningBalanceFormDialog.Batch)] = batch };
+        var dialog = await DialogService.ShowAsync<OpeningBalanceFormDialog>(
+            Loc["EditOpeningBalance"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true)
+        {
+            Snackbar.Add(Loc["OpeningBalanceSaved"], Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task OpenDetails(OpeningBalanceBatchDto batch)
+    {
+        var parameters = new DialogParameters { [nameof(OpeningBalanceDetailsDialog.Batch)] = batch };
+        var dialog = await DialogService.ShowAsync<OpeningBalanceDetailsDialog>(
+            Loc["OpeningBalanceDetails"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) await LoadAsync();
+    }
+
+    /// <summary>
+    /// الترحيل: تأكيد + منع الضغط المزدوج محليًا (_isBusy)، مع حماية قاعدة البيانات
+    /// (قفل صف الدفعة + الحالة Posted في الخدمة) ضد أي طلبين متزامنين.
+    /// </summary>
+    private async Task PostAsync(OpeningBalanceBatchDto batch)
+    {
+        if (_isBusy) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["Confirm"], Loc["OpeningBalanceConfirmPost"],
+            yesText: Loc["OpeningBalancePostAction"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+
+        _isBusy = true;
+        try
+        {
+            var posted = await OpeningBalanceService.PostAsync(batch.Id, await CurrentUserIdAsync());
+            Snackbar.Add($"{Loc["OpeningBalancePosted"]} — {posted.EntryNumber}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ErrorLocalizer.Resolve(Loc, ex), Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteAsync(OpeningBalanceBatchDto batch)
+    {
+        if (_isBusy) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["Confirm"], Loc["OpeningBalanceConfirmDelete"],
+            yesText: Loc["Delete"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+
+        _isBusy = true;
+        try
+        {
+            await OpeningBalanceService.DeleteDraftAsync(batch.Id, await CurrentUserIdAsync());
+            Snackbar.Add(Loc["OpeningBalanceDeleted"], Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ErrorLocalizer.Resolve(Loc, ex), Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+            await LoadAsync();
+        }
+    }
+}
+</ModuleGuard>

@@ -1,0 +1,147 @@
+﻿@page "/hr/positions"
+@attribute [Authorize(Roles = "Hr")]
+<ModuleGuard ModuleKey="Hr">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة المسميات الوظيفية - جدول المسميات المرتبطة بالأقسام *@
+
+<PageTitle>@Loc["Positions"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["Positions"]" Icon="@Icons.Material.Filled.Badge" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">
+        @Loc["AddPosition"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["PositionsCount", _positions.Count]</MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_positions.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">
+            @Loc["NoPositions"]
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_positions" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["Code"]</MudTh>
+                <MudTh>@Loc["NameAr"]</MudTh>
+                <MudTh>@Loc["NameEn"]</MudTh>
+                <MudTh>@Loc["Department"]</MudTh>
+                <MudTh>@Loc["Status"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Code</MudTd>
+                <MudTd>@context.NameAr</MudTd>
+                <MudTd>@context.NameEn</MudTd>
+                <MudTd>@context.DepartmentNameAr</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                        @(context.IsActive ? Loc["Active"] : Loc["Inactive"])
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   Color="Color.Primary" OnClick="@(e => OpenEditDialog(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ToggleOn" Size="Size.Small"
+                                   Color="Color.Secondary" OnClick="@(e => ToggleActive(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error" OnClick="@(e => DeletePosition(context))"
+                                   Disabled="context.IsSystem" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+    private List<PositionDto> _positions = new();
+    private List<DepartmentDto> _departments = new();
+
+    [Inject] private IPositionService PositionService { get; set; } = default!;
+    [Inject] private IDepartmentService DepartmentService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _positions = await PositionService.GetAllAsync();
+            _departments = await DepartmentService.GetAllAsync();
+        }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters
+        {
+            ["PositionService"] = PositionService,
+            ["Departments"] = _departments
+        };
+        var dialog = await DialogService.ShowAsync<PositionFormDialog>(
+            Loc["AddPositionTitle"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["PositionSaved"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task OpenEditDialog(PositionDto position)
+    {
+        var parameters = new DialogParameters
+        {
+            ["PositionService"] = PositionService,
+            ["Departments"] = _departments,
+            ["EditPosition"] = position
+        };
+        var dialog = await DialogService.ShowAsync<PositionFormDialog>(
+            Loc["EditPositionTitle", position.NameAr], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["PositionUpdated"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task DeletePosition(PositionDto position)
+    {
+        if (position.IsSystem) { Snackbar.Add(Loc["SystemPositionDeleteWarning"], Severity.Warning); return; }
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["DeleteConfirmation"], Loc["DeletePositionConfirm", position.NameAr],
+            yesText: Loc["Delete"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+        try { await PositionService.DeleteAsync(position.Id); Snackbar.Add(Loc["PositionDeleted"], Severity.Success); await LoadAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ToggleActive(PositionDto position)
+    {
+        try
+        {
+            await PositionService.ToggleActiveAsync(position.Id);
+            Snackbar.Add(position.IsActive ? Loc["PositionDeactivated"] : Loc["PositionActivated"], Severity.Info);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}
+</ModuleGuard>

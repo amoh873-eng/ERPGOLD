@@ -1,0 +1,95 @@
+﻿@page "/general-ledger-legacy"
+@attribute [Authorize(Roles = "Reports")]
+@inject IStringLocalizer<SharedResources> Loc
+<ModuleGuard ModuleKey="Reports">
+
+@* صفحة دفتر الأستاذ العام - كشف حركات حساب محدد *@
+
+<PageTitle>@Loc["GeneralLedger"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["GeneralLedger"]" Icon="@Icons.Material.Filled.LibraryBooks" />
+
+<MudGrid Class="mb-4 align-items-end">
+    <MudItem xs="12" sm="4">
+        <MudSelect T="Guid" @bind-Value="_accountId" Label="@Loc["Account"]" Variant="Variant.Outlined">
+            @foreach (var acc in _accounts)
+            {
+                <MudSelectItem T="Guid" Value="@acc.Id">@acc.Code - @acc.NameAr</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudDatePicker @bind-Date="_from" Label="@Loc["FromDate"]" Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudDatePicker @bind-Date="_to" Label="@Loc["ToDate"]" Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+    </MudItem>
+    <MudItem xs="12" sm="2">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync" FullWidth="true">@Loc["View"]</MudButton>
+    </MudItem>
+</MudGrid>
+
+@if (_ledger is not null)
+{
+    <MudPaper Elevation="1" Class="pa-4">
+        <MudText Typo="Typo.subtitle1">@_ledger.AccountCode - @_ledger.AccountNameAr</MudText>
+        <MudText Typo="Typo.caption" Class="mb-2">
+            @Loc["OpeningBalance"]: @_ledger.OpeningBalance.ToString("N2") —
+            @Loc["ClosingBalance"]: @_ledger.ClosingBalance.ToString("N2")
+        </MudText>
+        <MudTable Items="_ledger.Lines" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["Date"]</MudTh>
+                <MudTh>@Loc["JournalEntryNumber"]</MudTh>
+                <MudTh>@Loc["Statement"]</MudTh>
+                <MudTh>@Loc["Debit"]</MudTh>
+                <MudTh>@Loc["Credit"]</MudTh>
+                <MudTh>@Loc["Balance"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Date.ToString("yyyy-MM-dd")</MudTd>
+                <MudTd>@context.EntryNumber</MudTd>
+                <MudTd>@context.Description</MudTd>
+                <MudTd>@context.Debit.ToString("N2")</MudTd>
+                <MudTd>@context.Credit.ToString("N2")</MudTd>
+                <MudTd>@context.Balance.ToString("N2")</MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    private List<AccountDto> _accounts = new();
+    private Guid _accountId;
+    private DateTime? _from = DateTime.Today.AddMonths(-1);
+    private DateTime? _to = DateTime.Today;
+    private AccountLedgerDto? _ledger;
+
+    [Inject] private IReportService ReportService { get; set; } = default!;
+    [Inject] private IAccountService AccountService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _accounts = await AccountService.GetAllAccountsAsync();
+        _accountId = _accounts.FirstOrDefault()?.Id ?? Guid.Empty;
+        if (_accountId != Guid.Empty) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_accountId == Guid.Empty) return;
+        try
+        {
+            _ledger = await ReportService.GetAccountLedgerAsync(_accountId, _from ?? DateTime.Today.AddMonths(-1), _to ?? DateTime.Today);
+            if(_ledger!=null){ var s=await Settings.GetAsync(); var brand=s.AppDisplayName??"ERP"; var headers=new[]{"التاريخ","رقم القيد","البيان","مدين","دائن","الرصيد"}; var rows=_ledger.Lines.OrderBy(x=>x.Date).Select(x=>new List<string>{x.Date.ToString("yyyy-MM-dd"), x.EntryNumber, x.Description, x.Debit.ToString("N2"), x.Credit.ToString("N2"), x.Balance.ToString("N2")}).ToList(); var tbl=new GenericReportTable{ TitleAr=$"دفتر الأستاذ — {_ledger.AccountNameAr}", Headers=headers.ToList(), Rows=rows, Totals=new List<string>{"","","",_ledger.Lines.Sum(x=>x.Debit).ToString("N2"), _ledger.Lines.Sum(x=>x.Credit).ToString("N2"), _ledger.ClosingBalance.ToString("N2")}, ParamSummary=$"من {(_from?.ToString("yyyy-MM-dd")??"—")} إلى {(_to?.ToString("yyyy-MM-dd")??"—")} — رصيد افتتاحي {_ledger.OpeningBalance:N2}" }; await Dialogs.ShowAsync<ReportPopup>(tbl.TitleAr, new DialogParameters{["Table"]=tbl, ["Brand"]=brand}, new DialogOptions{ MaxWidth=MaxWidth.ExtraLarge, FullWidth=true }); }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+    [Inject] private IDialogService Dialogs {get;set;}=default!;
+    [Inject] private ISystemSettingsService Settings {get;set;}=default!;
+}
+</ModuleGuard>

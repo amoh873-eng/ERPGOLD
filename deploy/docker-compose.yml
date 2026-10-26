@@ -1,0 +1,121 @@
+# ---------------------------------------------------------------
+# ERPSystem production stack (standalone customer installation).
+#
+# Run from this directory:
+#   docker compose --env-file .env up -d --build
+#
+# Secrets come ONLY from .env (mode 600) - never from this file.
+# COMPOSE_PROJECT_NAME must be unique per installation so containers,
+# networks and volumes never collide with another installation.
+# PostgreSQL has NO published port: reachable only on the internal
+# `erpnet` bridge network.
+# ---------------------------------------------------------------
+name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME in .env (unique per installation)}
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-erp_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set to ERPCommercialDb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - erpnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-erp_app} -d ${POSTGRES_DB:?}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 30s
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:?};Username=${POSTGRES_USER:-erp_app};Password=${POSTGRES_PASSWORD:?}"
+      Backup__LocalDir: /app/backups
+      Backup__PgBin: /usr/bin
+      # First administrator: one-time /setup flow. Empty token = setup disabled (no default secret).
+      Setup__Token: ${SETUP_TOKEN:-}
+      # Optional vendor/owner console. All empty = console not mapped at all.
+      Owner__Username: ${OWNER_USERNAME:-}
+      Owner__PasswordHash: ${OWNER_PASSWORD_HASH:-}
+      Owner__SecretPath: ${OWNER_SECRET_PATH:-}
+      Owner__AllowedIPs: ${OWNER_ALLOWED_IPS:-}
+    volumes:
+      - web_uploads:/app/wwwroot/uploads
+      - web_backups:/app/backups
+    networks:
+      - erpnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ping >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:?};Username=${POSTGRES_USER:-erp_app};Password=${POSTGRES_PASSWORD:?}"
+      ERPSystem__Api__JwtSecret: ${JWT_SECRET:?JWT_SECRET must be set in .env (64 hex chars = 32 bytes)}
+      ERPSystem__Api__CorsOrigins: ${ERP_API_CORS_ORIGINS:-}
+    volumes:
+      # Legacy Windows-style fallback directory ("D:" paths) inside the API.
+      - api_flats:/app/D
+    networks:
+      - erpnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"          # used when a customer domain + HTTPS is enabled
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - mobile_downloads:/srv/mobile-downloads:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - erpnet
+    depends_on:
+      - web
+      - api
+
+volumes:
+  pgdata:
+  web_uploads:
+  web_backups:
+  api_flats:
+  mobile_downloads:
+  caddy_data:
+  caddy_config:
+
+networks:
+  erpnet:

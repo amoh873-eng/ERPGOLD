@@ -1,0 +1,182 @@
+@page "/accounting/periods"
+@attribute [Authorize(Roles = "Accounting,Admin,SuperAdmin")]
+<ModuleGuard ModuleKey="Accounting">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* الفترات المحاسبية (2026-10-25) — إغلاق/إعادة فتح الشهور عبر IAccountingPeriodService.
+   الإغلاق حاجز ترحيل فقط: لا يحذف ولا يعدّل أي قيد، والفحص مطبَّق مركزيًا في JournalEntryService. *@
+
+<PageTitle>@Loc["AccountingPeriods"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["AccountingPeriods"]" Subtitle="@Loc["AccountingPeriodsSubtitle"]" Icon="@Icons.Material.Filled.EventBusy" />
+
+<MudToolBar Class="mb-4">
+    <MudNumericField Culture="@CultureInfo.InvariantCulture" T="int" @bind-Value="_fiscalYear"
+                     Label="@Loc["PeriodsYear"]" Variant="Variant.Outlined" Margin="Margin.Dense"
+                     Min="1900" Max="2100" Style="max-width:160px" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+               Disabled="@_isBusy" OnClick="LoadAsync" Class="ms-3">
+        @Loc["Refresh"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">
+        @Loc["PeriodClosed"]: @(_year?.ClosedCount ?? 0) · @Loc["PeriodOpen"]: @(_year?.OpenCount ?? 0)
+    </MudText>
+</MudToolBar>
+
+<MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">@Loc["PeriodLockHint"]</MudAlert>
+
+<MudPaper Elevation="1" Class="pa-3 mb-3">
+    <MudTextField @bind-Value="_note" Label="@Loc["PeriodNote"]" Variant="Variant.Outlined" Lines="1" />
+</MudPaper>
+
+<MudPaper Elevation="1">
+    @if (_isLoading || _year is null)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else
+    {
+        <MudTable Items="_year.Months" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["PeriodMonth"]</MudTh>
+                <MudTh>@Loc["PeriodStatus"]</MudTh>
+                <MudTh>@Loc["PeriodClosedByLabel"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.MonthNameAr</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@(context.Status == 2 ? Color.Warning : Color.Success)">
+                        @(context.Status == 2 ? Loc["PeriodClosed"].Value : Loc["PeriodOpen"].Value)
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    @if (!string.IsNullOrWhiteSpace(context.ClosedBy))
+                    {
+                        <span>@context.ClosedBy — @context.ClosedAt?.ToString("yyyy-MM-dd HH:mm")</span>
+                        @if (!string.IsNullOrWhiteSpace(context.ReopenedBy))
+                        {
+                            <br />
+                            <span class="muted-text">@context.ReopenedBy — @context.ReopenedAt?.ToString("yyyy-MM-dd HH:mm")</span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="muted-text">—</span>
+                    }
+                </MudTd>
+                <MudTd>
+                    @if (context.Status == 2)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
+                                   StartIcon="@Icons.Material.Filled.LockOpen" Disabled="@_isBusy"
+                                   OnClick="@(e => ReopenAsync(context))">
+                            @Loc["ReopenPeriod"]
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Lock" Disabled="@_isBusy"
+                                   OnClick="@(e => CloseAsync(context))">
+                            @Loc["ClosePeriod"]
+                        </MudButton>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    [Inject] private IAccountingPeriodService PeriodService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private AuthenticationStateProvider AuthState { get; set; } = default!;
+
+    private int _fiscalYear = DateTime.Today.Year;
+    private AccountingPeriodYearDto? _year;
+    private string? _note;
+    private bool _isLoading = true;
+    private bool _isBusy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _year = await PeriodService.GetYearAsync(_fiscalYear);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"{Loc["LoadError"]} {ErrorLocalizer.Resolve(Loc, ex)}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task<string> CurrentUserIdAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        return auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+               ?? auth.User.Identity?.Name ?? "system";
+    }
+
+    private async Task CloseAsync(AccountingPeriodDto period)
+    {
+        if (_isBusy) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["Confirm"], $"{Loc["ClosePeriod"]} — {period.MonthNameAr} {period.FiscalYear}",
+            yesText: Loc["ClosePeriod"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+
+        _isBusy = true;
+        try
+        {
+            var closed = await PeriodService.CloseAsync(period.FiscalYear, period.Month, _note, await CurrentUserIdAsync());
+            Snackbar.Add($"{Loc["ClosePeriod"]} — {closed.MonthNameAr} {closed.FiscalYear}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ErrorLocalizer.Resolve(Loc, ex), Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+            await LoadAsync();
+        }
+    }
+
+    private async Task ReopenAsync(AccountingPeriodDto period)
+    {
+        if (_isBusy) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["Confirm"], $"{Loc["ReopenPeriod"]} — {period.MonthNameAr} {period.FiscalYear}",
+            yesText: Loc["ReopenPeriod"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+
+        _isBusy = true;
+        try
+        {
+            var reopened = await PeriodService.ReopenAsync(period.FiscalYear, period.Month, _note, await CurrentUserIdAsync());
+            Snackbar.Add($"{Loc["ReopenPeriod"]} — {reopened.MonthNameAr} {reopened.FiscalYear}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ErrorLocalizer.Resolve(Loc, ex), Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+            await LoadAsync();
+        }
+    }
+}
+</ModuleGuard>

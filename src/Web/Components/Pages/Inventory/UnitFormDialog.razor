@@ -1,0 +1,89 @@
+@* نموذج حوار لإضافة/تعديل وحدة قياس *@
+@inject IStringLocalizer<SharedResources> Loc
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+            }
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_code"
+                                  Label="@Loc["UnitCode"]"
+                                  Required="true"
+                                  RequiredError="@Loc["UnitCodeRequired"]"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_nameAr"
+                                  Label="@Loc["UnitNameAr"]"
+                                  Required="true"
+                                  RequiredError="@Loc["NameArRequired"]"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_nameEn"
+                                  Label="@Loc["UnitNameEn"]"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Color="Color.Default">@Loc["Cancel"]</MudButton>
+        <MudButton OnClick="SubmitAsync" Variant="Variant.Filled" Color="Color.Primary">
+            @(EditUnit is null ? Loc["Add"] : Loc["Edit"])
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public IUnitService UnitService { get; set; } = default!;
+    [Parameter] public UnitDto? EditUnit { get; set; }
+
+    private MudForm? _form;
+    private string _code = string.Empty;
+    private string _nameAr = string.Empty;
+    private string? _nameEn;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (EditUnit is not null)
+        {
+            _code = EditUnit.Code;
+            _nameAr = EditUnit.NameAr;
+            _nameEn = EditUnit.NameEn;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task SubmitAsync()
+    {
+        await _form!.Validate();
+        if (!_form.IsValid) return;
+
+        _error = null;
+        try
+        {
+            if (EditUnit is null)
+            {
+                await UnitService.CreateAsync(new CreateUnitDto { Code = _code, NameAr = _nameAr, NameEn = _nameEn });
+            }
+            else
+            {
+                await UnitService.UpdateAsync(new UpdateUnitDto { Id = EditUnit.Id, Code = _code, NameAr = _nameAr, NameEn = _nameEn, IsActive = EditUnit.IsActive });
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

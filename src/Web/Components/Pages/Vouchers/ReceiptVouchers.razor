@@ -1,0 +1,386 @@
+@page "/receipt-vouchers"
+@attribute [Authorize(Roles = "Expenses, Accounting, Admin, SuperAdmin")]
+@using ERPSystem.Application.DTOs.Customers
+@using ERPSystem.Application.DTOs.Vouchers
+@using ERPSystem.Application.Security
+@using ERPSystem.Domain.Enums
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة سندات القبض (المرحلة C): قائمة + فلاتر + دورة حياة (اعتماد/ترحيل/إلغاء) + طباعة + سجل تدقيق *@
+
+<ModuleGuard ModuleKey="Expenses">
+<PageTitle>@Loc["ReceiptVouchers"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["ReceiptVouchers"]" Icon="@Icons.Material.Filled.RequestPage" />
+
+<MudToolBar Class="mb-4">
+    @if (_canCreate)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+            @Loc["AddReceiptVoucher"]
+        </MudButton>
+    }
+    <MudSpacer />
+    <MudTextField @bind-Value="_search" Placeholder="@Loc["SearchVoucherPlaceholder"]" Dense="true"
+                  Variant="Variant.Outlined" Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search" Class="mr-2" Style="min-width:200px;" />
+    <MudSelect @bind-Value="_filterCustomerId" Label="@Loc["Customer"]" T="Guid?"
+               Variant="Variant.Outlined" Clearable="true" Dense="true" Class="mr-2" Style="min-width:190px;">
+        @foreach (var customer in _customers)
+        {
+            <MudSelectItem T="Guid?" Value="@customer.Id">@($"{customer.Code} - {customer.NameAr}")</MudSelectItem>
+        }
+    </MudSelect>
+    <MudSelect @bind-Value="_filterStatus" Label="@Loc["Status"]" T="int?"
+               Variant="Variant.Outlined" Clearable="true" Dense="true" Class="mr-2" Style="min-width:140px;">
+        <MudSelectItem T="int?" Value="1">@Loc["VoucherStatusDraft"]</MudSelectItem>
+        <MudSelectItem T="int?" Value="2">@Loc["VoucherStatusApproved"]</MudSelectItem>
+        <MudSelectItem T="int?" Value="3">@Loc["VoucherStatusPosted"]</MudSelectItem>
+        <MudSelectItem T="int?" Value="4">@Loc["VoucherStatusCancelled"]</MudSelectItem>
+    </MudSelect>
+    <MudDatePicker @bind-Date="_filterFrom" Label="@Loc["FromDate"]" Variant="Variant.Outlined" Clearable="true" Dense="true" Class="mr-2" />
+    <MudDatePicker @bind-Date="_filterTo" Label="@Loc["ToDate"]" Variant="Variant.Outlined" Clearable="true" Dense="true" Class="mr-2" />
+    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="LoadAsync" Class="mr-2">@Loc["ApplyFilter"]</MudButton>
+    <MudButton Variant="Variant.Text" OnClick="ClearFilter">@Loc["ClearFilter"]</MudButton>
+</MudToolBar>
+
+@if (UnpostedCount > 0)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-3" Dense="true">
+        @string.Format(Loc["UnpostedVouchersNotice"], UnpostedCount)
+    </MudAlert>
+}
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_vouchers.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="ma-2">@Loc["NoReceiptVouchers"]</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_vouchers" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["VoucherNumber"]</MudTh>
+                <MudTh>@Loc["VoucherDate"]</MudTh>
+                <MudTh>@Loc["Customer"]</MudTh>
+                <MudTh>@Loc["PaymentMethod"]</MudTh>
+                <MudTh>@Loc["Amount"]</MudTh>
+                <MudTh>@Loc["Status"]</MudTh>
+                <MudTh>@Loc["VoucherJournalEntry"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.VoucherNumber</MudTd>
+                <MudTd>@context.VoucherDate.ToString("yyyy-MM-dd")</MudTd>
+                <MudTd>@($"{context.CustomerCode} - {context.CustomerName}")</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@(context.PaymentMethod == 1 ? Color.Info : Color.Warning)">
+                        @(context.PaymentMethod == 1 ? Loc["Cash"] : Loc["Bank"])
+                    </MudChip>
+                </MudTd>
+                <MudTd><MoneyDisplay Amount="context.Amount" /></MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@context.StatusName</MudChip>
+                </MudTd>
+                <MudTd>
+                    @if (!string.IsNullOrEmpty(context.JournalEntryNumber))
+                    {
+                        <a href="/journal-entries" style="color:var(--erp-primary); text-decoration:none;">
+                            <MudIcon Icon="@Icons.Material.Filled.Book" Size="Size.Small" /> @context.JournalEntryNumber
+                        </a>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Class="muted-text">@Loc["VoucherNoJournalYet"]</MudText>
+                    }
+                </MudTd>
+                <MudTd>
+                    @if (context.Status == (int)VoucherStatus.Draft && _canEdit)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary"
+                                       OnClick="@(() => OpenEditDialog(context))" title="@Loc["EditVoucher"]" />
+                    }
+                    @if (context.Status == (int)VoucherStatus.Draft && _canApprove)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Verified" Size="Size.Small" Color="Color.Info"
+                                       OnClick="@(() => ApproveAsync(context))" title="@Loc["ApproveVoucher"]" />
+                    }
+                    @if (context.Status == (int)VoucherStatus.Approved && _canPost)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.PostAdd" Size="Size.Small" Color="Color.Success"
+                                       OnClick="@(() => PostVoucherAsync(context))" title="@Loc["PostVoucher"]" />
+                    }
+                    @if (context.Status == (int)VoucherStatus.Posted && _canAllocate)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.AccountBalanceWallet" Size="Size.Small" Color="Color.Secondary"
+                                       OnClick="@(() => OpenAllocationDialog(context))" title="@Loc["AllocateReceipt"]" />
+                    }
+                    @if ((context.Status == (int)VoucherStatus.Draft || context.Status == (int)VoucherStatus.Approved) && _canCancel)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Cancel" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => CancelVoucherAsync(context))" title="@Loc["CancelVoucher"]" />
+                    }
+                    <MudIconButton Icon="@Icons.Material.Filled.History" Size="Size.Small"
+                                   OnClick="@(() => ShowAuditAsync(context))" title="@Loc["VoucherAuditTrail"]" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Print" Size="Size.Small"
+                                   OnClick="@(() => PrintAsync(context))" title="@Loc["Print"]" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager RowsPerPageString="@Loc["RowsPerPage"]" InfoFormat="@Loc["PagerInfo"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+</ModuleGuard>
+
+@code {
+    private bool _isLoading = true;
+    private List<ReceiptVoucherDto> _vouchers = new();
+    private List<CustomerDto> _customers = new();
+    private Guid? _filterCustomerId;
+    private int? _filterStatus;
+    private DateTime? _filterFrom;
+    private DateTime? _filterTo;
+    private string? _search;
+
+    // أزرار الحالة تُبنى من نفس مصدر التصريح الخلفي (والخدمة تفحص مرة أخرى — لا حماية بالواجهة فقط)
+    private bool _canCreate;
+    private bool _canEdit;
+    private bool _canApprove;
+    private bool _canPost;
+    private bool _canCancel;
+    private bool _canAllocate;
+    private bool _canReverse;
+
+    /// <summary>
+    /// عدد السندات غير المرحّلة في القائمة المعروضة (مسودة/معتمد): لا أثر محاسبي لها
+    /// في شجرة الحسابات ولا في ميزان المراجعة — يُعرض تنبيه صريح بدل ترك المستخدم يستنتج ذلك.
+    /// </summary>
+    private int UnpostedCount => _vouchers.Count(v =>
+        v.Status == (int)VoucherStatus.Draft || v.Status == (int)VoucherStatus.Approved);
+
+    [Inject] private IReceiptVoucherService VoucherService { get; set; } = default!;
+    [Inject] private ICustomerService CustomerService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private IVoucherAuthorization VoucherAuth { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _canCreate = VoucherAuth.CanCreate();
+        _canEdit = VoucherAuth.CanEdit();
+        _canApprove = VoucherAuth.CanApprove();
+        _canPost = VoucherAuth.CanPost();
+        _canCancel = VoucherAuth.CanCancel();
+        _canAllocate = VoucherAuth.CanAllocate();
+        _canReverse = VoucherAuth.CanReverse();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _customers = await CustomerService.GetAllAsync();
+            _vouchers = await VoucherService.GetAsync(_filterCustomerId, _filterStatus, _filterFrom, _filterTo, _search);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ClearFilter()
+    {
+        _filterCustomerId = null;
+        _filterStatus = null;
+        _filterFrom = null;
+        _filterTo = null;
+        _search = null;
+        await LoadAsync();
+    }
+
+    private static Color StatusColor(int status) => status switch
+    {
+        (int)VoucherStatus.Draft => Color.Default,
+        (int)VoucherStatus.Approved => Color.Info,
+        (int)VoucherStatus.Posted => Color.Success,
+        (int)VoucherStatus.Cancelled => Color.Error,
+        _ => Color.Default
+    };
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters
+        {
+            ["VoucherService"] = VoucherService,
+            ["Customers"] = _customers,
+            ["CanApproveAndPost"] = _canApprove && _canPost
+        };
+        var dialog = await DialogService.ShowAsync<ReceiptVoucherFormDialog>(
+            Loc["AddReceiptVoucher"], parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true)
+        {
+            NotifyResult(result?.Data as string);
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>P0-2: فتح شاشة تخصيص مقبوضات السند المُرحَّل على فواتير العميل.</summary>
+    private async Task OpenAllocationDialog(ReceiptVoucherDto voucher)
+    {
+        var parameters = new DialogParameters
+        {
+            ["VoucherId"] = voucher.Id,
+            ["CanAllocate"] = _canAllocate,
+            ["CanReverse"] = _canReverse
+        };
+        var dialog = await DialogService.ShowAsync<ReceiptAllocationDialog>(Loc["AllocateReceipt"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+            await LoadAsync();
+    }
+
+    private async Task OpenEditDialog(ReceiptVoucherDto voucher)
+    {
+        var parameters = new DialogParameters
+        {
+            ["VoucherService"] = VoucherService,
+            ["Customers"] = _customers,
+            ["Existing"] = voucher,
+            ["CanApproveAndPost"] = _canApprove && _canPost
+        };
+        var dialog = await DialogService.ShowAsync<ReceiptVoucherFormDialog>(
+            Loc["EditVoucher"], parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true)
+        {
+            NotifyResult(result?.Data as string);
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>
+    /// رسالة نتيجة الحوار: «حفظ وترحيل» تنجح برقم القيد، والحفظ كمسودة تُنبَّه صراحةً بأنه
+    /// لا أثر محاسبي قبل الاعتماد ثم الترحيل (منع الانطباع بأن السند «لم يُرحَّل محاسبيًا»).
+    /// </summary>
+    private void NotifyResult(string? outcome)
+    {
+        if (outcome is not null && outcome.StartsWith("posted", StringComparison.Ordinal))
+        {
+            var entry = outcome.Length > "posted:".Length ? outcome["posted:".Length..] : string.Empty;
+            Snackbar.Add(string.Format(Loc["VoucherPostedSuccess"], entry), Severity.Success);
+            return;
+        }
+
+        Snackbar.Add(Loc["VoucherDraftSavedNoEffect"], Severity.Info);
+    }
+
+    private async Task ApproveAsync(ReceiptVoucherDto voucher)
+    {
+        try
+        {
+            await VoucherService.ApproveAsync(voucher.Id);
+            Snackbar.Add(Loc["VoucherApprovedMsg"], Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task PostVoucherAsync(ReceiptVoucherDto voucher)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["PostVoucher"], Loc["ConfirmPostVoucherMsg"], yesText: Loc["Confirm"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+
+        try
+        {
+            await VoucherService.PostAsync(voucher.Id);
+            Snackbar.Add(Loc["VoucherPostedMsg"], Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task CancelVoucherAsync(ReceiptVoucherDto voucher)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["CancelVoucher"], Loc["ConfirmCancelVoucherMsg"], yesText: Loc["Confirm"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+
+        try
+        {
+            // سبب الإلغاء يُسجَّل في سجل التدقيق (D3-A) مع الحفاظ على الأثر التاريخي
+            await VoucherService.CancelAsync(voucher.Id, Loc["CancelVoucher"]);
+            Snackbar.Add(Loc["VoucherCancelledMsg"], Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ShowAuditAsync(ReceiptVoucherDto voucher)
+    {
+        try
+        {
+            var audit = await VoucherService.GetAuditAsync(voucher.Id);
+            var parameters = new DialogParameters { ["Entries"] = audit };
+            await DialogService.ShowAsync<VoucherAuditDialog>(
+                $"{Loc["VoucherAuditTrail"]} — {voucher.VoucherNumber}", parameters,
+                new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task PrintAsync(ReceiptVoucherDto voucher)
+    {
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new(Loc["VoucherNumber"], voucher.VoucherNumber),
+            new(Loc["VoucherDate"], voucher.VoucherDate.ToString("yyyy-MM-dd")),
+            new(Loc["Customer"], $"{voucher.CustomerCode} - {voucher.CustomerName}"),
+            new(Loc["PaymentMethod"], voucher.PaymentMethod == 1 ? Loc["Cash"] : Loc["Bank"]),
+            new(Loc["Amount"], voucher.Amount.ToString("0.00")),
+            new(Loc["CashOrBankAccount"], voucher.CashOrBankAccountLabel),
+            new(Loc["ReceivableAccount"], voucher.ReceivableAccountLabel),
+            new(Loc["Status"], voucher.StatusName),
+            new(Loc["Description"], voucher.Description ?? "-"),
+            new(Loc["ExternalReference"], voucher.ExternalReference ?? "-"),
+            new(Loc["VoucherJournalEntry"], string.IsNullOrEmpty(voucher.JournalEntryNumber) ? "-" : voucher.JournalEntryNumber!)
+        };
+
+        var parameters = new DialogParameters
+        {
+            ["Title"] = $"{Loc["ReceiptVoucher"]} — {voucher.VoucherNumber}",
+            ["Fields"] = fields,
+            ["Note"] = string.IsNullOrEmpty(voucher.JournalEntryNumber) ? Loc["VoucherNoJournalYet"] : Loc["VoucherHasJournalEntry"]
+        };
+
+        await DialogService.ShowAsync<VoucherPrintDialog>(Loc["Print"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    }
+}

@@ -1,0 +1,143 @@
+﻿@page "/sales/quotes"
+@attribute [Authorize(Roles = "Sales")]
+<ModuleGuard ModuleKey="Sales">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة عروض الأسعار - قائمة عروض الأسعار مع إمكانية التحويل إلى فواتير *@
+
+<PageTitle>@Loc["SalesQuotes"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["SalesQuotes"]" Icon="@Icons.Material.Filled.RequestQuote" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+        @Loc["AddQuote"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["TotalQuotes", _quotes.Count]</MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_quotes.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">
+            @Loc["NoQuotes"]
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_quotes" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["QuoteNumber"]</MudTh>
+                <MudTh>@Loc["Customer"]</MudTh>
+                <MudTh>@Loc["Date"]</MudTh>
+                <MudTh>@Loc["Total"]</MudTh>
+                <MudTh>@Loc["Status"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.QuoteNumber</MudTd>
+                <MudTd>@context.CustomerName</MudTd>
+                <MudTd>@context.QuoteDate.ToString("yyyy-MM-dd")</MudTd>
+                <MudTd>@context.TotalAmount.ToString("N2")</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)">
+                        @context.StatusNameAr
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    @if (context.Status == 1)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small"
+                                       Color="Color.Success" OnClick="@(e => ApproveQuote(context))" />
+                    }
+                    @if (context.Status == 2)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.SwapHoriz" Size="Size.Small"
+                                       Color="Color.Primary" OnClick="@(e => ConvertQuote(context))" />
+                    }
+                    @if (context.Status == 1 || context.Status == 2)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Cancel" Size="Size.Small"
+                                       Color="Color.Error" OnClick="@(e => CancelQuote(context))" />
+                    }
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+    private List<SalesQuoteDto> _quotes = new();
+
+    [Inject] private ISalesQuoteService QuoteService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try { _quotes = await QuoteService.GetQuotesAsync(); }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private static Color GetStatusColor(int status) => status switch
+    {
+        1 => Color.Default,
+        2 => Color.Info,
+        3 => Color.Success,
+        4 => Color.Error,
+        _ => Color.Default
+    };
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<SalesQuoteFormDialog>(
+            Loc["AddQuote"], new DialogParameters(),
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["QuoteSaved"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task ApproveQuote(SalesQuoteDto quote)
+    {
+        try { await QuoteService.ApproveAsync(quote.Id); Snackbar.Add(Loc["QuoteApproved"], Severity.Success); await LoadAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task CancelQuote(SalesQuoteDto quote)
+    {
+        try { await QuoteService.CancelAsync(quote.Id); Snackbar.Add(Loc["QuoteCancelled"], Severity.Info); await LoadAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ConvertQuote(SalesQuoteDto quote)
+    {
+        var dialog = await DialogService.ShowAsync<SalesQuoteConvertDialog>(
+            Loc["ConvertQuoteTitle", quote.QuoteNumber], new DialogParameters(),
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true && result?.Data is SalesQuoteConvertDialog.ConvertResult conv)
+        {
+            try
+            {
+                await QuoteService.ConvertToInvoiceAsync(quote.Id, conv.WarehouseId, conv.InvoiceType);
+                Snackbar.Add(Loc["QuoteConverted"], Severity.Success);
+                await LoadAsync();
+            }
+            catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        }
+    }
+}
+</ModuleGuard>

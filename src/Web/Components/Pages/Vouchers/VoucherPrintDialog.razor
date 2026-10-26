@@ -1,0 +1,48 @@
+@* حوار طباعة سند (قبض/صرف) — تخطيط طباعة بسيط + window.print() كما في بقية شاشات النظام *@
+@inject IStringLocalizer<SharedResources> Loc
+
+<MudDialog>
+    <DialogContent>
+        <div id="voucher-print-area" class="voucher-print">
+            <h3 class="mb-2">@Title</h3>
+            <table class="table table-sm" style="width:100%; border-collapse:collapse;">
+                <tbody>
+                    @foreach (var field in Fields)
+                    {
+                        <tr>
+                            <td style="width:38%; font-weight:600; padding:4px 6px; border:1px solid #ccc;">@field.Key</td>
+                            <td style="padding:4px 6px; border:1px solid #ccc;">@field.Value</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (!string.IsNullOrWhiteSpace(Note))
+            {
+                <MudText Typo="Typo.caption" Class="mt-2 muted-text">@Note</MudText>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="Color.Default">@Loc["Cancel"]</MudButton>
+        @* زر طباعة خام يستدعي window.print() مباشرة في المتصفح (نفس نمط PosReceiptDialog) *@
+        <button type="button" class="erp-print-btn mud-button-root mud-button mud-button-filled mud-button-filled-primary"
+                onclick="window.print()">
+            @Loc["Print"]
+        </button>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>عنوان السند المطبوع (نوع السند + رقمه).</summary>
+    [Parameter] public string Title { get; set; } = string.Empty;
+
+    /// <summary>حقول السند (التسمية → القيمة) بترتيب الطباعة.</summary>
+    [Parameter] public List<KeyValuePair<string, string>> Fields { get; set; } = new();
+
+    /// <summary>ملاحظة أسفل السند (مثل: لا قيد بعد).</summary>
+    [Parameter] public string? Note { get; set; }
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+}

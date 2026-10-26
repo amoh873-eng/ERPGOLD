@@ -1,0 +1,247 @@
+@* P0-2 (المرحلة B) — حوار تخصيص مقبوضات سند قبض على فواتير العميل.
+   لا يُنشئ أي قيد محاسبي: التوزيع تحليلي على مبلغ محصَّل فعلًا. FIFO اقتراح صريح بزر. *@
+@inject IStringLocalizer<SharedResources> Loc
+@using ERPSystem.Application.DTOs.Vouchers
+@using ERPSystem.Application.Interfaces
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@Loc["AllocateReceipt"] — @_state?.VoucherNumber</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+        }
+        @if (_info is not null)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-3">@_info</MudAlert>
+        }
+
+        @if (_state is null)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else
+        {
+            <MudGrid Class="mb-2">
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption">@Loc["Amount"]</MudText>
+                    <MudText><b><MoneyDisplay Amount="_state.Amount" /></b></MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption">@Loc["AllocatedAmount"]</MudText>
+                    <MudText><b><MoneyDisplay Amount="_state.AllocatedAmount" /></b></MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.caption">@Loc["UnallocatedAmount"]</MudText>
+                    <MudText><b><MoneyDisplay Amount="_state.UnallocatedAmount" /></b></MudText>
+                </MudItem>
+            </MudGrid>
+
+            <MudToolBar Dense="true" Class="px-0">
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.AutoAwesomeMotion" OnClick="ApplyFifoSuggestionAsync"
+                           Disabled="_busy">@Loc["ApplyFifo"]</MudButton>
+                <MudText Typo="Typo.caption" Class="ml-3">@Loc["FifoHint"]</MudText>
+            </MudToolBar>
+
+            <MudTable Items="_invoices" Dense="true" Hover="true" Class="mb-3">
+                <HeaderContent>
+                    <MudTh>@Loc["InvoiceNumber"]</MudTh>
+                    <MudTh Class="justify-end">@Loc["InvoiceTotal"]</MudTh>
+                    <MudTh Class="justify-end">@Loc["InvoicePaid"]</MudTh>
+                    <MudTh Class="justify-end">@Loc["InvoiceReturns"]</MudTh>
+                    <MudTh Class="justify-end">@Loc["InvoiceAllocated"]</MudTh>
+                    <MudTh Class="justify-end">@Loc["InvoiceResidual"]</MudTh>
+                    <MudTh Class="justify-end">@Loc["InvoiceAvailable"]</MudTh>
+                    <MudTh Class="justify-end">@Loc["Amount"]</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.InvoiceNumber</MudTd>
+                    <MudTd Class="justify-end"><MoneyDisplay Amount="context.TotalAmount" /></MudTd>
+                    <MudTd Class="justify-end"><MoneyDisplay Amount="context.PaidAmount" /></MudTd>
+                    <MudTd Class="justify-end"><MoneyDisplay Amount="context.EffectiveReturns" /></MudTd>
+                    <MudTd Class="justify-end"><MoneyDisplay Amount="context.AllocatedAmount" /></MudTd>
+                    <MudTd Class="justify-end"><MoneyDisplay Amount="context.Residual" /></MudTd>
+                    <MudTd Class="justify-end"><MoneyDisplay Amount="context.Available" /></MudTd>
+                    <MudTd Class="justify-end">
+                        @if (context.IsEligible)
+                        {
+                            <MudNumericField T="decimal" Value="@InputOf(context.InvoiceId)"
+                                             ValueChanged="@(v => SetInput(context.InvoiceId, v))"
+                                             Min="0m" Max="@context.Available" Dense="true"
+                                             Variant="Variant.Outlined" Style="max-width:130px;" />
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Class="muted-text">@context.IneligibilityReason</MudText>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            @if (_state.Allocations.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-1">@Loc["AllocationLines"]</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <thead>
+                        <tr>
+                            <th>@Loc["InvoiceNumber"]</th>
+                            <th>@Loc["Amount"]</th>
+                            <th>@Loc["Status"]</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in _state.Allocations)
+                        {
+                            <tr>
+                                <td>@a.InvoiceNumber</td>
+                                <td><MoneyDisplay Amount="@(a.Direction == 1 ? a.Amount : -a.Amount)" /></td>
+                                <td>@(a.Direction == 1 ? Loc["AllocationActive"].Value : Loc["AllocationReversedLine"].Value)</td>
+                                <td>
+                                    @if (a.Direction == 1 && CanReverse)
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                                                   OnClick="@(() => ReverseAsync(a))" Disabled="_busy">@Loc["ReverseAllocation"]</MudButton>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3">@Loc["AllocationNoJournalNote"]</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="_busy">@Loc["Close"]</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">@Loc["Save"]</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Inject] private IReceiptVoucherService VoucherService { get; set; } = default!;
+
+    [Parameter] public Guid VoucherId { get; set; }
+    [Parameter] public bool CanAllocate { get; set; }
+    [Parameter] public bool CanReverse { get; set; }
+
+    private ReceiptAllocationStateDto? _state;
+    private List<CustomerOpenInvoiceDto> _invoices = new();
+    private readonly Dictionary<Guid, decimal> _inputs = new();
+    private string? _error;
+    private string? _info;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _state = await VoucherService.GetAllocationStateAsync(VoucherId);
+            if (_state is null)
+            {
+                _error = "سند القبض غير موجود.";
+                return;
+            }
+            _invoices = _state.OpenInvoices;
+            _inputs.Clear();
+            foreach (var inv in _invoices.Where(i => i.IsEligible)) _inputs[inv.InvoiceId] = 0m;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private decimal InputOf(Guid invoiceId) => _inputs.TryGetValue(invoiceId, out var v) ? v : 0m;
+
+    private void SetInput(Guid invoiceId, decimal value)
+    {
+        var available = _invoices.FirstOrDefault(i => i.InvoiceId == invoiceId)?.Available ?? 0m;
+        _inputs[invoiceId] = Math.Clamp(value, 0m, available);
+    }
+
+    /// <summary>تعبئة الحقول من اقتراح FIFO (قراءة فقط) — لا حفظ إلا بضغط «حفظ».</summary>
+    private async Task ApplyFifoSuggestionAsync()
+    {
+        _error = null; _info = null;
+        try
+        {
+            var suggestion = await VoucherService.SuggestFifoAsync(VoucherId);
+            if (suggestion is null) { _error = "تعذّر حساب اقتراح FIFO."; return; }
+            foreach (var key in _inputs.Keys.ToList()) _inputs[key] = 0m;
+            foreach (var line in suggestion.Lines)
+                if (_inputs.ContainsKey(line.SalesInvoiceId)) _inputs[line.SalesInvoiceId] = line.Amount;
+            _info = string.Format(Loc["FifoSuggestedInfo"], suggestion.SuggestedTotal, suggestion.RemainingUnallocated);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null; _info = null; _busy = true;
+        try
+        {
+            if (!CanAllocate)
+                throw new InvalidOperationException("لا تملك صلاحية تخصيص المقبوضات.");
+
+            var allocations = _inputs.Where(kv => kv.Value > 0m)
+                .Select(kv => new CustomerAllocationInput { SalesInvoiceId = kv.Key, Amount = kv.Value })
+                .ToList();
+
+            await VoucherService.SetAllocationsAsync(VoucherId, new SetReceiptAllocationsRequest
+            {
+                Allocations = allocations,
+                IdempotencyKey = Guid.NewGuid(),
+                Note = "ضبط توزيع من شاشة السندات"
+            });
+
+            await LoadAsync();
+            _info = Loc["AllocationSaved"].Value;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReverseAsync(CustomerAllocationDto allocation)
+    {
+        _error = null; _info = null; _busy = true;
+        try
+        {
+            await VoucherService.ReverseAllocationAsync(VoucherId, new ReverseCustomerAllocationRequest
+            {
+                AllocationId = allocation.Id,
+                IdempotencyKey = Guid.NewGuid(),
+                Note = "عكس من شاشة السندات"
+            });
+            await LoadAsync();
+            _info = Loc["AllocationReversedInfo"].Value;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Close(DialogResult.Ok("closed"));
+}

@@ -1,0 +1,278 @@
+@* حوار إنشاء/تعديل مسودة سند قبض — لا يُنشأ أي قيد محاسبي من هذه الشاشة (القيد عند الترحيل فقط) *@
+@inject IStringLocalizer<SharedResources> Loc
+@inject IWebHostEnvironment Env
+@using ERPSystem.Application.DTOs.Customers
+@using ERPSystem.Application.DTOs.Vouchers
+@using ERPSystem.Application.Interfaces
+@using Microsoft.AspNetCore.Hosting
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+            }
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudSelect Value="_customerId" ValueChanged="OnCustomerChangedAsync" Label="@Loc["Customer"]" T="Guid?"
+                               Variant="Variant.Outlined" Required="true" RequiredError="@Loc["RequiredField"]">
+                        @foreach (var customer in Customers)
+                        {
+                            <MudSelectItem T="Guid?" Value="@customer.Id">@($"{customer.Code} - {customer.NameAr}")</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_voucherDate" Label="@Loc["VoucherDate"]" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="decimal" @bind-Value="_amount" Label="@Loc["Amount"]"
+                                     Variant="Variant.Outlined" Min="0.01m" Required="true"
+                                     RequiredError="@Loc["RequiredField"]" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect @bind-Value="_paymentMethod" Label="@Loc["PaymentMethod"]" T="int" Variant="Variant.Outlined">
+                        <MudSelectItem Value="1">@Loc["Cash"]</MudSelectItem>
+                        <MudSelectItem Value="2">@Loc["Bank"]</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_externalReference" Label="@Loc["ExternalReference"]" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.body2" Class="mb-1 muted-text">@Loc["Attachment"]</MudText>
+                    <InputFile OnChange="OnFileSelected" />
+                    @if (!string.IsNullOrEmpty(_attachmentName))
+                    {
+                        <MudText Typo="Typo.caption" Class="muted-text mt-1">@_attachmentName</MudText>
+                    }
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_description" Label="@Loc["Description"]" Lines="2" Variant="Variant.Outlined" />
+                </MudItem>
+
+                @* P0-2: تخصيص اختياري (جزئي/كلي) على فواتير العميل المُرحَّلة — بلا قيد محاسبي إضافي.
+                   FIFO متاح صراحةً في حوار التخصيص بعد إنشاء السند. *@
+                @if (_customerId is not null && _invoices.Count > 0)
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.subtitle2" Class="mb-1">@Loc["AllocateReceipt"]</MudText>
+                        <MudTable Items="_invoices" Dense="true" Hover="true">
+                            <HeaderContent>
+                                <MudTh>@Loc["InvoiceNumber"]</MudTh>
+                                <MudTh Class="justify-end">@Loc["InvoiceResidual"]</MudTh>
+                                <MudTh Class="justify-end">@Loc["InvoiceAvailable"]</MudTh>
+                                <MudTh Class="justify-end">@Loc["Amount"]</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.InvoiceNumber</MudTd>
+                                <MudTd Class="justify-end"><MoneyDisplay Amount="context.Residual" /></MudTd>
+                                <MudTd Class="justify-end"><MoneyDisplay Amount="context.Available" /></MudTd>
+                                <MudTd Class="justify-end">
+                                    <MudNumericField T="decimal" Value="@InputOf(context.InvoiceId)"
+                                                     ValueChanged="@(v => SetInput(context.InvoiceId, v))"
+                                                     Min="0m" Max="@context.Available" Dense="true"
+                                                     Variant="Variant.Outlined" Style="max-width:130px;" />
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                        <MudText Typo="Typo.caption" Class="mt-1">
+                            @Loc["AllocatedAmount"]: <MoneyDisplay Amount="_allocatedSum" /> ·
+                            @Loc["UnallocatedAmount"]: <MoneyDisplay Amount="@(_amount - _allocatedSum)" />
+                        </MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Color="Color.Default" Disabled="_busy">@Loc["Cancel"]</MudButton>
+        <MudButton OnClick="@(() => SubmitAsync(false))" Variant="Variant.Outlined" Color="Color.Primary" Disabled="_busy">@Loc["SaveDraft"]</MudButton>
+        @if (CanApproveAndPost)
+        {
+            <MudButton OnClick="@(() => SubmitAsync(true))" Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.PostAdd" Disabled="_busy">
+                @Loc["SaveAndPost"]
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public IReceiptVoucherService VoucherService { get; set; } = default!;
+    [Parameter] public List<CustomerDto> Customers { get; set; } = new();
+
+    /// <summary>سند موجود للتعديل (مسودة) — null يعني إنشاء جديد.</summary>
+    [Parameter] public ReceiptVoucherDto? Existing { get; set; }
+
+    /// <summary>
+    /// هل يملك المستخدم صلاحيتي الاعتماد والترحيل؟ عند true يظهر زر «حفظ وترحيل»
+    /// (نفس نمط أزرار القائمة المبنية على نفس مصدر التصريح الخلفي).
+    /// </summary>
+    [Parameter] public bool CanApproveAndPost { get; set; }
+
+    private MudForm? _form;
+    private bool _busy;
+    private Guid? _customerId;
+    private DateTime? _voucherDate = DateTime.Today;
+    private decimal _amount;
+    private int _paymentMethod = 1;
+    private string? _description;
+    private string? _externalReference;
+    private string? _attachmentName;
+    private string? _attachmentPath;
+    private string? _error;
+
+    // P0-2: تخصيص اختياري على فواتير العميل (جزئي/كلي) — لا قيد محاسبي إضافي.
+    private List<CustomerOpenInvoiceDto> _invoices = new();
+    private readonly Dictionary<Guid, decimal> _inputs = new();
+    private decimal _allocatedSum => _inputs.Values.Sum();
+
+    private decimal InputOf(Guid invoiceId) => _inputs.TryGetValue(invoiceId, out var v) ? v : 0m;
+
+    private void SetInput(Guid invoiceId, decimal value)
+    {
+        var available = _invoices.FirstOrDefault(i => i.InvoiceId == invoiceId)?.Available ?? 0m;
+        _inputs[invoiceId] = Math.Clamp(Money(value), 0m, available);
+    }
+
+    private static decimal Money(decimal v) => Math.Round(v, 2, MidpointRounding.ToEven);
+
+    /// <summary>يُحمّل الفواتير المؤهَّلة للعميل المحدد (قراءة) عند تغيير العميل.</summary>
+    private async Task OnCustomerChangedAsync(Guid? customerId)
+    {
+        _customerId = customerId;
+        _inputs.Clear();
+        _invoices = new();
+        if (customerId is null) return;
+        try
+        {
+            _invoices = await VoucherService.GetEligibleInvoicesAsync(customerId.Value);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        if (Existing is null) return;
+
+        _customerId = Existing.CustomerId;
+        _voucherDate = Existing.VoucherDate;
+        _amount = Existing.Amount;
+        _paymentMethod = Existing.PaymentMethod;
+        _description = Existing.Description;
+        _externalReference = Existing.ExternalReference;
+        _attachmentPath = Existing.AttachmentPath;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+
+        const long maxBytes = 5 * 1024 * 1024;
+        if (file.Size > maxBytes)
+        {
+            _error = Loc["FileTooLarge"];
+            return;
+        }
+
+        var ext = Path.GetExtension(file.Name);
+        var safeName = Guid.NewGuid().ToString("N") + ext;
+        var uploadDir = Path.Combine(Env.WebRootPath, "uploads");
+        Directory.CreateDirectory(uploadDir);
+
+        await using (var fs = File.Create(Path.Combine(uploadDir, safeName)))
+        {
+            await file.OpenReadStream(maxBytes).CopyToAsync(fs);
+        }
+
+        _attachmentName = file.Name;
+        _attachmentPath = "uploads/" + safeName;
+    }
+
+    /// <summary>
+    /// حفظ الحوار: <paramref name="post"/> = false يحفظ مسودة فقط (بلا أثر محاسبي)،
+    /// و= true ينفّذ «حفظ وترحيل»: إنشاء/تحديث المسودة ← اعتماد ← ترحيل — كلها عبر نفس
+    /// خدمات السندات المعتمدة (لا منطق محاسبي جديد هنا). عند فشل الاعتماد أو الترحيل
+    /// تظهر الرسالة ويبقى السند بحالته الحقيقية (مسودة/معتمد) بلا قيد — لا سند مرحّل بلا قيد.
+    /// </summary>
+    private async Task SubmitAsync(bool post)
+    {
+        await _form!.Validate();
+        if (!_form.IsValid || _customerId is null) return;
+
+        _error = null;
+        _busy = true;
+        try
+        {
+            var date = _voucherDate?.Date ?? DateTime.Today;
+
+            ReceiptVoucherDto voucher;
+            if (Existing is null)
+            {
+                voucher = await VoucherService.CreateDraftAsync(new CreateReceiptVoucherDto
+                {
+                    CustomerId = _customerId.Value,
+                    VoucherDate = date,
+                    PaymentMethod = _paymentMethod,
+                    Amount = _amount,
+                    Description = _description,
+                    ExternalReference = _externalReference,
+                    AttachmentPath = _attachmentPath
+                });
+            }
+            else
+            {
+                voucher = await VoucherService.UpdateDraftAsync(Existing.Id, new UpdateReceiptVoucherDto
+                {
+                    CustomerId = _customerId.Value,
+                    VoucherDate = date,
+                    PaymentMethod = _paymentMethod,
+                    Amount = _amount,
+                    Description = _description,
+                    ExternalReference = _externalReference,
+                    AttachmentPath = _attachmentPath
+                });
+            }
+
+            if (!post)
+            {
+                MudDialog.Close(DialogResult.Ok("draft"));
+                return;
+            }
+
+            // حفظ وترحيل: نفس دورة الحياة المعتمدة (مسودة ← اعتماد ← ترحيل) بخطوة واحدة.
+            await VoucherService.ApproveAsync(voucher.Id);
+
+            // P0-2: تمرير التخصيصات الصريحة مع طلب الترحيل (تُطبَّق ذرّيًا — بلا قيد محاسبي إضافي).
+            var allocations = _inputs.Where(kv => kv.Value > 0m)
+                .Select(kv => new CustomerAllocationInput { SalesInvoiceId = kv.Key, Amount = kv.Value })
+                .ToList();
+
+            var posted = await VoucherService.PostAsync(voucher.Id, new PostReceiptVoucherRequest
+            {
+                Allocations = allocations,
+                IdempotencyKey = Guid.NewGuid()
+            });
+
+            MudDialog.Close(DialogResult.Ok("posted:" + (posted.JournalEntryNumber ?? string.Empty)));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

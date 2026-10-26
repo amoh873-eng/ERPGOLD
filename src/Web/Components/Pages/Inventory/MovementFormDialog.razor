@@ -1,0 +1,202 @@
+@* نموذج حوار لتسجيل حركة مخزون (وارد/صادر/تسوية/رصيد افتتاحي) *@
+@inject IStringLocalizer<SharedResources> Loc
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+            }
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudSelect Value="@_itemId"
+                               ValueChanged="OnItemChanged"
+                               Label="@Loc["Item"]"
+                               Required="true"
+                               RequiredError="@Loc["ItemRequired"]"
+                               Variant="Variant.Outlined"
+                               T="Guid">
+                        @foreach (var item in _items)
+                        {
+                            <MudSelectItem Value="@item.Id">
+                                @item.Code - @item.NameAr (@Loc["ItemBalance", item.CurrentStock.ToString("N0")])
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudSelect @bind-Value="_warehouseId"
+                               Label="@Loc["Warehouse"]"
+                               Required="true"
+                               RequiredError="@Loc["WarehouseRequired"]"
+                               Variant="Variant.Outlined"
+                               T="Guid">
+                        @foreach (var warehouse in _warehouses)
+                        {
+                            <MudSelectItem Value="@warehouse.Id">@warehouse.Code - @warehouse.NameAr</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudSelect @bind-Value="_movementType"
+                               Label="@Loc["MovementType"]"
+                               Required="true"
+                               Variant="Variant.Outlined"
+                               T="int">
+                        @* P7/G1: نوع «رصيد افتتاحي» أُزيل من هذه الشاشة.
+                           الشاشة وخدمتها تسجّلان حركة كميّة/تكلفة بلا أي قيد محاسبي،
+                           فلا يجوز أن تكون مسارًا ماليًا للأرصدة الافتتاحية (المسار الرسمي:
+                           دفعة الأرصدة الافتتاحية التي تُرحّل 1300 + حركة المخزون معًا). *@
+                        <MudSelectItem Value="1">@Loc["MovementTypeInPurchase"]</MudSelectItem>
+                        <MudSelectItem Value="2">@Loc["MovementTypeOutSale"]</MudSelectItem>
+                        <MudSelectItem Value="4">@Loc["MovementTypeAdjustIn"]</MudSelectItem>
+                        <MudSelectItem Value="5">@Loc["MovementTypeAdjustOut"]</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                        @Loc["OpeningBalanceOfficialPathHint"]
+                        <MudLink Href="/accounting/opening-balances" Class="ms-1">@Loc["OpeningBalances"]</MudLink>
+                    </MudAlert>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudNumericField Culture="@CultureInfo.InvariantCulture" @bind-Value="_quantity"
+                                     Label="@Loc["Qty"]"
+                                     Required="true"
+                                     RequiredError="@Loc["QuantityRequired"]"
+                                     Variant="Variant.Outlined"
+                                     T="decimal" DecimalPlaces="2" Format="0.00" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudNumericField Culture="@CultureInfo.InvariantCulture" @bind-Value="_unitCost"
+                                     Label="@Loc["UnitCost"]"
+                                     Variant="Variant.Outlined"
+                                     T="decimal" DecimalPlaces="2" Format="0.00"
+                                     ReadOnly="@(!_canEditPrice)"
+                                     HelperText="@(_canEditPrice ? null : PriceLockHint)" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_movementDate"
+                                   Label="@Loc["Date"]"
+                                   Variant="Variant.Outlined"
+                                   T="DateTime?"
+                                   AutoClose="true" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_referenceNumber"
+                                  Label="@Loc["ReferenceNumberInvoice"]"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_note"
+                                  Label="@Loc["Notes"]"
+                                  Lines="2"
+                                  Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Color="Color.Default">@Loc["Cancel"]</MudButton>
+        <MudButton OnClick="SubmitAsync" Variant="Variant.Filled" Color="Color.Primary">@Loc["RegisterMovement"]</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public IStockMovementService MovementService { get; set; } = default!;
+
+    [Inject] private IItemService ItemService { get; set; } = default!;
+    [Inject] private IWarehouseService WarehouseService { get; set; } = default!;
+
+    private MudForm? _form;
+    private List<ItemDto> _items = new();
+    private List<WarehouseDto> _warehouses = new();
+
+    private Guid _itemId;
+    private Guid _warehouseId;
+    private int _movementType = 1;
+    private decimal _quantity;
+    private decimal _unitCost;
+    private DateTime? _movementDate = DateTime.Today;
+    private string? _referenceNumber;
+    private string? _note;
+    private string? _error;
+
+    // ── Requirement 3: تكلفة الوحدة اليدوية ──
+    // شاشة حركات المخزون (شاشة مخزون بها سعر) → الصلاحية الحالية المناسبة: Inventory.Edit.
+    // نفس قواعد الخلفية (ManualPriceRules)، والحارس الخلفي هو الحماية الفعلية (وليس تعطيل الحقل).
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
+    private bool _canEditPrice;
+    private const string PriceLockHint = "قراءة فقط — لا تملك صلاحية تعديل السعر يدويًا (Inventory.Edit)";
+
+    private async Task LoadPricePermissionAsync()
+    {
+        try
+        {
+            var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+            _canEditPrice = ManualPriceRules.IsAuthorized(auth.User, ManualPriceModules.Inventory);
+        }
+        catch { _canEditPrice = false; } // فشل مغلق: أي تعذّر لقراءة الهوية ⇒ لا تعديل يدوي
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPricePermissionAsync();
+
+        _items = await ItemService.GetAllAsync();
+        _warehouses = await WarehouseService.GetAllAsync();
+        _itemId = _items.FirstOrDefault()?.Id ?? Guid.Empty;
+        _warehouseId = _warehouses.FirstOrDefault(w => w.IsDefault)?.Id
+                       ?? _warehouses.FirstOrDefault()?.Id
+                       ?? Guid.Empty;
+    }
+
+    private Task OnItemChanged(Guid id)
+    {
+        _itemId = id;
+        var item = _items.FirstOrDefault(i => i.Id == id);
+        if (item is not null)
+            _unitCost = item.CostPrice;
+        return Task.CompletedTask;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task SubmitAsync()
+    {
+        await _form!.Validate();
+        if (!_form.IsValid) return;
+
+        _error = null;
+        try
+        {
+            await MovementService.CreateAsync(new CreateStockMovementDto
+            {
+                ItemId = _itemId,
+                WarehouseId = _warehouseId,
+                MovementType = _movementType,
+                Quantity = _quantity,
+                UnitCost = _unitCost,
+                ReferenceNumber = _referenceNumber,
+                Note = _note,
+                MovementDate = _movementDate ?? DateTime.Today
+            });
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

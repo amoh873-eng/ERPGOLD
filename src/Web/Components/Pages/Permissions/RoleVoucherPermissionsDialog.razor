@@ -1,0 +1,108 @@
+@inject IStringLocalizer<SharedResources> Loc
+@inject IPermissionGrantService GrantService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@Loc["VoucherPermissions"] — @Role.Name</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">@Loc["VoucherPermissionsHelp"]</MudText>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else
+        {
+            <MudStack Spacing="1">
+                @foreach (var state in _states)
+                {
+                    <MudCheckBox T="bool"
+                                 Value="@_selected.Contains(state.Permission)"
+                                 ValueChanged="@((bool v) => Toggle(state.Permission, v))"
+                                 Label="@Label(state.Action)"
+                                 Dense="true" />
+                }
+            </MudStack>
+
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                @Loc["VoucherRefundIndependentNote"]
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">@Loc["Cancel"]</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync" Disabled="@(_loading || _saving)">
+            @Loc["Save"]
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public RoleDto Role { get; set; } = default!;
+
+    private bool _loading = true;
+    private bool _saving;
+    private List<VoucherPermissionState> _states = new();
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _states = (await GrantService.GetVoucherPermissionsAsync(Role.Id)).ToList();
+            _selected.Clear();
+
+            // الافتراضي = الصلاحيات الفعّالة الآن (يمنع السحب الصامت عند إضافة الرد).
+            foreach (var s in _states.Where(s => s.IsEffective))
+                _selected.Add(s.Permission);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string Label(string action)
+    {
+        var key = "VoucherAction_" + action;
+        var localized = Loc[key];
+        return localized.ResourceNotFound ? action : localized.Value;
+    }
+
+    private void Toggle(string permission, bool value)
+    {
+        if (value) _selected.Add(permission);
+        else _selected.Remove(permission);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            await GrantService.SaveVoucherPermissionsAsync(Role.Id, _selected.ToList());
+            Snackbar.Add(Loc["VoucherPermissionsSaved"], Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,30 @@
+@page "/pos-scan-test"
+@implements IAsyncDisposable
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+
+<h3 style="padding:2rem;">POS Scan Diagnostic Test (DIAG-03)</h3>
+<p style="padding:0 2rem;">
+    This page has <strong>NO input, NO POS components, NO C# calls, NO state updates</strong>.
+    It only imports <code>posScan.js</code>, whose DIAG-03 observer logs every keydown/keyup
+    to the browser console as <code>[SCAN-DIAG]</code>.
+</p>
+<p style="padding:0 2rem;">
+    Scan a barcode with your physical scanner, then copy the console lines starting with
+    <code>[SCAN-DIAG]</code>.
+</p>
+
+@code {
+    private IJSObjectReference? _m;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { _m = await JS.InvokeAsync<IJSObjectReference>("import", "./posScan.js"); }
+        catch { /* prerender */ }
+    }
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_m is not null) await _m.DisposeAsync(); } catch { }
+        _m = null;
+    }
+}

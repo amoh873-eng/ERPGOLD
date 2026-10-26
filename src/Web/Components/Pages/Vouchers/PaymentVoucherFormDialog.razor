@@ -1,0 +1,464 @@
+@* حوار إنشاء/تعديل مسودة سند صرف — لا يُنشأ أي قيد محاسبي من هذه الشاشة (القيد عند الترحيل فقط) *@
+@inject IStringLocalizer<SharedResources> Loc
+@inject IWebHostEnvironment Env
+@using ERPSystem.Application.DTOs.Purchases
+@using ERPSystem.Application.DTOs.Vouchers
+@using ERPSystem.Application.Interfaces
+@using ERPSystem.Application.Services
+@using Microsoft.AspNetCore.Hosting
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+            }
+            <MudGrid>
+                @if (CanRefund && (Existing is null || IsCustomerMode))
+                {
+                    <MudItem xs="12">
+                        <MudToggleGroup T="string" Value="_partyType" ValueChanged="OnPartyTypeChanged"
+                                        Color="Color.Primary" Size="Size.Small" Disabled="Existing is not null">
+                            <MudToggleItem Value="@("Supplier")" Text="@Loc["PartyTypeSupplier"]" />
+                            <MudToggleItem Value="@("Customer")" Text="@Loc["PartyTypeCustomer"]" />
+                        </MudToggleGroup>
+                    </MudItem>
+                }
+
+                @if (IsSupplierMode)
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudSelect Value="_supplierId" ValueChanged="OnSupplierChanged" Label="@Loc["Supplier"]" T="Guid?"
+                                   Variant="Variant.Outlined" Required="true" RequiredError="@Loc["RequiredField"]">
+                            @foreach (var supplier in Suppliers)
+                            {
+                                <MudSelectItem T="Guid?" Value="@supplier.Id">@($"{supplier.Code} - {supplier.NameAr}")</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                }
+                else
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudSelect Value="_customerId" ValueChanged="OnCustomerChanged" Label="@Loc["Customer"]" T="Guid?"
+                                   Variant="Variant.Outlined" Required="true" RequiredError="@Loc["RequiredField"]"
+                                   Disabled="@(Existing is not null)">
+                            @foreach (var customer in Customers)
+                            {
+                                <MudSelectItem T="Guid?" Value="@customer.Id">@($"{customer.Code} - {customer.NameAr}")</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect Value="_salesReturnId" ValueChanged="OnReturnChanged" Label="@Loc["SalesReturnRef"]" T="Guid?"
+                                   Variant="Variant.Outlined" Required="true" RequiredError="@Loc["RequiredField"]"
+                                   Disabled="@(Existing is not null || _customerId is null)">
+                            @foreach (var ret in _availability?.Returns ?? new List<CustomerRefundableReturnDto>())
+                            {
+                                <MudSelectItem T="Guid?" Value="@ret.ReturnId">
+                                    @($"{ret.ReturnNumber} · {ret.ReturnDate:yyyy-MM-dd} · {Loc["RefundableAmount"]}: {ret.RemainingAmount:N2}")
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Dense="true">
+                            @Loc["CreditBalance"]: @((_availability?.CreditBalance ?? 0m).ToString("N2"))
+                            @if (SelectedReturn is not null)
+                            {
+                                <span> · @Loc["RefundableAmount"]: @SelectedReturn.RemainingAmount.ToString("N2")</span>
+                            }
+                        </MudAlert>
+                    </MudItem>
+                }
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_voucherDate" Label="@Loc["VoucherDate"]" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="decimal" @bind-Value="_amount" Label="@Loc["Amount"]"
+                                     Variant="Variant.Outlined" Min="0.01m" Required="true"
+                                     RequiredError="@Loc["RequiredField"]" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect @bind-Value="_paymentMethod" Label="@Loc["PaymentMethod"]" T="int" Variant="Variant.Outlined">
+                        <MudSelectItem Value="1">@Loc["Cash"]</MudSelectItem>
+                        <MudSelectItem Value="2">@Loc["Bank"]</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_beneficiaryName" Label="@Loc["BeneficiaryName"]" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_externalReference" Label="@Loc["ExternalReference"]" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.body2" Class="mb-1 muted-text">@Loc["Attachment"]</MudText>
+                    <InputFile OnChange="OnFileSelected" />
+                    @if (!string.IsNullOrEmpty(_attachmentName))
+                    {
+                        <MudText Typo="Typo.caption" Class="muted-text mt-1">@_attachmentName</MudText>
+                    }
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_description" Label="@Loc["Description"]" Lines="2" Variant="Variant.Outlined" />
+                </MudItem>
+                @if (CanApproveAndPost && IsSupplierMode)
+                {
+                    <MudItem xs="12">
+                        <MudDivider Class="my-2" />
+                        <div class="d-flex align-center gap-2 mb-2">
+                            <MudText Typo="Typo.subtitle2">تخصيص الدفعة على الفواتير المؤهلة</MudText>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SuggestFifoAsync"
+                                       Disabled="_busy || _eligible.Count == 0">اقتراح FIFO (مراجعة إلزامية)</MudButton>
+                        </div>
+                        @if (_eligible.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true">
+                                لا توجد فواتير مشتريات مستحقة مؤهلة لهذا المورد — لا يُرحَّل سند دفع دون فواتير مؤهلة.
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <MudTable Items="_eligible" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+                                <HeaderContent>
+                                    <MudTh>الفاتورة</MudTh>
+                                    <MudTh>التاريخ</MudTh>
+                                    <MudTh>الإجمالي</MudTh>
+                                    <MudTh>المتبقي</MudTh>
+                                    <MudTh>التخصيص</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd>@context.InvoiceNumber</MudTd>
+                                    <MudTd>@context.InvoiceDate.ToString("yyyy-MM-dd")</MudTd>
+                                    <MudTd>@context.TotalAmount.ToString("N2")</MudTd>
+                                    <MudTd>@context.Available.ToString("N2")</MudTd>
+                                    <MudTd>
+                                        <MudNumericField T="decimal" Value="AllocationOf(context.InvoiceId)"
+                                                         ValueChanged="@(v => SetAllocation(context.InvoiceId, v))"
+                                                         Min="0" Max="@context.Available" Variant="Variant.Outlined" Dense="true" />
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+                        <MudText Typo="Typo.body2" Class="mt-2">
+                            مبلغ السند: @_amount.ToString("N2") · إجمالي التخصيص: @AllocationTotal.ToString("N2") · الفرق: @Difference.ToString("N2")
+                        </MudText>
+                        @if (Difference != 0m)
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                                يجب أن يساوي مجموع التخصيصات مبلغ السند تمامًا قبل الترحيل (لا مبلغ غير موزع).
+                            </MudAlert>
+                        }
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Color="Color.Default" Disabled="_busy">@Loc["Cancel"]</MudButton>
+        <MudButton OnClick="@(() => SubmitAsync(false))" Variant="Variant.Outlined" Color="Color.Primary" Disabled="_busy">@Loc["SaveDraft"]</MudButton>
+        @if (CanApproveAndPost)
+        {
+            <MudButton OnClick="@(() => SubmitAsync(true))" Variant="Variant.Filled" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.PostAdd" Disabled="_busy">
+                @Loc["SaveAndPost"]
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public IPaymentVoucherService VoucherService { get; set; } = default!;
+    [Parameter] public List<SupplierDto> Suppliers { get; set; } = new();
+
+    /// <summary>SUB-2b/P3 — عملاء الرد (وضع العميل).</summary>
+    [Parameter] public List<CustomerDto> Customers { get; set; } = new();
+
+    /// <summary>SUB-2b/P3 — استعلامات أهلية الرد (الرصيد الدائن + المردودات القابلة للرد).</summary>
+    [Parameter] public CustomerRefundQueries? RefundQueries { get; set; }
+
+    /// <summary>SUB-2b/P3 — صلاحية Vouchers.Refund الصريحة (تُخفي وضع العميل عند غيابها).</summary>
+    [Parameter] public bool CanRefund { get; set; }
+
+    /// <summary>PU-04: استعلامات رصيد الفاتورة المؤهل للتخصيص (D1/D5).</summary>
+    [Parameter] public SupplierAllocationQueries? AllocationQueries { get; set; }
+
+    /// <summary>سند موجود للتعديل (مسودة) — null يعني إنشاء جديد.</summary>
+    [Parameter] public PaymentVoucherDto? Existing { get; set; }
+
+    /// <summary>هل يملك المستخدم صلاحيتي الاعتماد والترحيل؟ عند true يظهر زر «حفظ وترحيل».</summary>
+    [Parameter] public bool CanApproveAndPost { get; set; }
+
+    private MudForm? _form;
+    private bool _busy;
+    private Guid? _supplierId;
+
+    // SUB-2b/P3 — وضع الطرف: مورد (افتراضي، سلوك قائم) أو عميل (رد مبلغ من مردود).
+    private string _partyType = "Supplier";
+    private Guid? _customerId;
+    private Guid? _salesReturnId;
+    private CustomerRefundAvailabilityDto? _availability;
+
+    private bool IsSupplierMode => !string.Equals(_partyType, "Customer", StringComparison.OrdinalIgnoreCase);
+    private bool IsCustomerMode => !IsSupplierMode;
+
+    private CustomerRefundableReturnDto? SelectedReturn =>
+        _availability?.Returns.FirstOrDefault(r => r.ReturnId == _salesReturnId);
+    private DateTime? _voucherDate = DateTime.Today;
+    private decimal _amount;
+    private int _paymentMethod = 1;
+    private string? _beneficiaryName;
+    private string? _description;
+    private string? _externalReference;
+    private string? _attachmentName;
+    private string? _attachmentPath;
+    private string? _error;
+
+    // PU-04 — تخصيص الدفعة على الفواتير المؤهلة (D1/D5/D11).
+    private List<SupplierInvoiceResidualDto> _eligible = new();
+    private readonly Dictionary<Guid, decimal> _allocations = new();
+
+    // PU-04 (N-1/R-2) — مفتاح منع تكرار الإنشاء لجلسة الحوار هذه:
+    //   • يُولَّد مرة واحدة عند فتح الحوار، ويُعاد **كما هو** عند إعادة إرسال الطلب نفسه.
+    //   • حوار جديد (طلب جديد مقصود) ⇒ مفتاح جديد تلقائيًا (تهيئة الحقل).
+    private readonly Guid _createKey = Guid.NewGuid();
+
+    /// <summary>السند المُنشأ في هذه الجلسة — يمنع إنشاء سند ثانٍ عند إعادة المحاولة بعد فشل الاعتماد/الترحيل.</summary>
+    private PaymentVoucherDto? _createdVoucher;
+
+    private decimal AllocationTotal => _allocations.Values.Sum();
+    private decimal Difference => Math.Round(_amount - AllocationTotal, 2);
+    private decimal AllocationOf(Guid invoiceId) => _allocations.TryGetValue(invoiceId, out var value) ? value : 0m;
+    private void SetAllocation(Guid invoiceId, decimal value) => _allocations[invoiceId] = Math.Round(value, 2);
+
+    private async Task OnSupplierChanged(Guid? supplierId)
+    {
+        _supplierId = supplierId;
+        _allocations.Clear();
+        _eligible = new();
+        await LoadEligibleAsync();
+    }
+
+    private async Task OnPartyTypeChanged(string value)
+    {
+        _partyType = value;
+        _error = null;
+        if (IsCustomerMode)
+        {
+            // وضع الرد لا يستخدم تخصيصات فواتير المشتريات إطلاقًا.
+            _allocations.Clear();
+            _eligible = new();
+        }
+        await Task.CompletedTask;
+    }
+
+    private async Task OnCustomerChanged(Guid? customerId)
+    {
+        _customerId = customerId;
+        _salesReturnId = null;
+        _availability = null;
+        _amount = 0m;
+        _error = null;
+
+        if (RefundQueries is not null && customerId is { } id)
+        {
+            try { _availability = await RefundQueries.GetAvailabilityAsync(id); }
+            catch (Exception ex) { _error = ex.Message; }
+        }
+    }
+
+    private void OnReturnChanged(Guid? returnId)
+    {
+        _salesReturnId = returnId;
+        var ret = SelectedReturn;
+        if (ret is null) return;
+
+        var max = Math.Min(ret.RemainingAmount, _availability?.CreditBalance ?? 0m);
+        _amount = max > 0m ? Math.Round(max, 2) : 0m;
+    }
+
+    private async Task LoadEligibleAsync()
+    {
+        if (AllocationQueries is null || _supplierId is null)
+        {
+            _eligible = new();
+            return;
+        }
+        _eligible = await AllocationQueries.GetInvoicesAsync(
+            _supplierId.Value, _voucherDate?.Date ?? DateTime.Today, onlyEligible: true);
+    }
+
+    private async Task SuggestFifoAsync()
+    {
+        if (AllocationQueries is null || _supplierId is null || _amount <= 0m) return;
+        var suggested = await AllocationQueries.SuggestFifoAsync(
+            _supplierId.Value, _amount, _voucherDate?.Date ?? DateTime.Today);
+        _allocations.Clear();
+        foreach (var item in suggested) _allocations[item.PurchaseInvoiceId] = item.Amount;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Existing is null) return;
+
+        _supplierId = Existing.SupplierId;
+        _partyType = Existing.CustomerId is not null ? "Customer" : "Supplier";
+        _customerId = Existing.CustomerId;
+        _salesReturnId = Existing.SalesReturnId;
+        _voucherDate = Existing.VoucherDate;
+        _amount = Existing.Amount;
+        _paymentMethod = Existing.PaymentMethod;
+        _beneficiaryName = Existing.BeneficiaryName;
+        _description = Existing.Description;
+        _externalReference = Existing.ExternalReference;
+        _attachmentPath = Existing.AttachmentPath;
+
+        if (Existing.CustomerId is { } customerId && RefundQueries is not null)
+        {
+            try { _availability = await RefundQueries.GetAvailabilityAsync(customerId); }
+            catch (Exception ex) { _error = ex.Message; }
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+
+        const long maxBytes = 5 * 1024 * 1024;
+        if (file.Size > maxBytes)
+        {
+            _error = Loc["FileTooLarge"];
+            return;
+        }
+
+        var ext = Path.GetExtension(file.Name);
+        var safeName = Guid.NewGuid().ToString("N") + ext;
+        var uploadDir = Path.Combine(Env.WebRootPath, "uploads");
+        Directory.CreateDirectory(uploadDir);
+
+        await using (var fs = File.Create(Path.Combine(uploadDir, safeName)))
+        {
+            await file.OpenReadStream(maxBytes).CopyToAsync(fs);
+        }
+
+        _attachmentName = file.Name;
+        _attachmentPath = "uploads/" + safeName;
+    }
+
+    /// <summary>
+    /// حفظ الحوار: <paramref name="post"/> = false يحفظ مسودة فقط (بلا أثر محاسبي)،
+    /// و= true ينفّذ «حفظ وترحيل»: إنشاء/تحديث المسودة ← اعتماد ← ترحيل عبر نفس خدمات السندات.
+    /// عند فشل الاعتماد/الترحيل تظهر الرسالة ويبقى السند بحالته الحقيقية بلا قيد.
+    /// </summary>
+    private async Task SubmitAsync(bool post)
+    {
+        await _form!.Validate();
+        if (!_form.IsValid) return;
+        if (IsSupplierMode && _supplierId is null) return;
+        if (IsCustomerMode && (_customerId is null || _salesReturnId is null)) return;
+
+        _error = null;
+        _busy = true;
+        try
+        {
+            var date = _voucherDate?.Date ?? DateTime.Today;
+
+            PaymentVoucherDto voucher;
+            if (Existing is null)
+            {
+                // PU-04 (N-1/R-2): إعادة المحاولة لا تُنشئ سندًا ثانيًا —
+                //  1) إن أُنشئ السند في هذه الجلسة نُعيد استخدامه بلا نداء جديد.
+                //  2) وإن كان الخادم قد أنشأه ثم انقطع الرد، فالمفتاح الثابت `_createKey` يُعيد السند الأصلي.
+                voucher = _createdVoucher ??= await VoucherService.CreateDraftAsync(new CreatePaymentVoucherDto
+                {
+                    SupplierId = IsSupplierMode ? _supplierId : null,
+                    CustomerId = IsCustomerMode ? _customerId : null,
+                    SalesReturnId = IsCustomerMode ? _salesReturnId : null,
+                    VoucherDate = date,
+                    PaymentMethod = _paymentMethod,
+                    Amount = _amount,
+                    BeneficiaryName = _beneficiaryName,
+                    Description = _description,
+                    ExternalReference = _externalReference,
+                    AttachmentPath = _attachmentPath,
+                    IdempotencyKey = _createKey
+                });
+            }
+            else
+            {
+                voucher = await VoucherService.UpdateDraftAsync(Existing.Id, new UpdatePaymentVoucherDto
+                {
+                    SupplierId = IsSupplierMode ? _supplierId : null,
+                    CustomerId = IsCustomerMode ? _customerId : null,
+                    SalesReturnId = IsCustomerMode ? _salesReturnId : null,
+                    VoucherDate = date,
+                    PaymentMethod = _paymentMethod,
+                    Amount = _amount,
+                    BeneficiaryName = _beneficiaryName,
+                    Description = _description,
+                    ExternalReference = _externalReference,
+                    AttachmentPath = _attachmentPath
+                });
+            }
+
+            if (!post)
+            {
+                MudDialog.Close(DialogResult.Ok("draft"));
+                return;
+            }
+
+            // SUB-2b/P3 — مسار رد العميل: بلا تخصيصات فواتير مشتريات، وبقيد Dr 1200 / Cr 1100|1101.
+            if (IsCustomerMode)
+            {
+                await VoucherService.ApproveAsync(voucher.Id);
+                var postedRefund = await VoucherService.PostAsync(voucher.Id);
+                MudDialog.Close(DialogResult.Ok("posted:" + (postedRefund.JournalEntryNumber ?? string.Empty)));
+                return;
+            }
+
+            // حفظ وترحيل: نفس دورة الحياة المعتمدة (مسودة ← اعتماد ← ترحيل) بخطوة واحدة.
+            // PU-04 (D1/D5): لا ترحيل بلا فواتير مؤهلة، ولا ترحيل بمبلغ غير موزع.
+            if (_eligible.Count == 0) await LoadEligibleAsync();
+            if (_eligible.Count == 0)
+            {
+                _error = "لا توجد فواتير مشتريات مستحقة مؤهلة لهذا المورد — لا يُرحَّل سند دفع دون فواتير مؤهلة.";
+                return;
+            }
+
+            var allocationInputs = _allocations
+                .Where(kv => kv.Value > 0m)
+                .Select(kv => new PaymentAllocationInput
+                {
+                    PurchaseInvoiceId = kv.Key,
+                    Amount = Math.Round(kv.Value, 2)
+                })
+                .ToList();
+
+            var allocatedSum = allocationInputs.Sum(a => a.Amount);
+            if (Math.Round(_amount - allocatedSum, 2) != 0m)
+            {
+                _error = $"مجموع التخصيصات ({allocatedSum:N2}) لا يساوي مبلغ السند ({_amount:N2}) — لا يُسمح بمبلغ غير موزع.";
+                return;
+            }
+
+            await VoucherService.ApproveAsync(voucher.Id);
+            var posted = await VoucherService.PostAsync(voucher.Id, allocationInputs);
+
+            MudDialog.Close(DialogResult.Ok("posted:" + (posted.JournalEntryNumber ?? string.Empty)));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

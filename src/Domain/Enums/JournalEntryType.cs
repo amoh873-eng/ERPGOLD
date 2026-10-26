@@ -1,0 +1,72 @@
+namespace ERPSystem.Domain.Enums;
+
+/// <summary>
+/// Identifies the source that created a journal entry (قيد محاسبي).
+/// يُستخدم للأرشفة والتتبّع: يعرف المستخدم من أين جاء القيد
+/// (فاتورة مبيعات؟ مردود؟ قيد يدوي؟) عبر النوع والرقم المرجعي.
+/// </summary>
+public enum JournalEntryType
+{
+    /// <summary>قيد يدوي - Manual (ينشئه المستخدم مباشرة)</summary>
+    Manual = 1,
+
+    /// <summary>ناتج عن فاتورة مبيعات - Sales Invoice</summary>
+    SalesInvoice = 2,
+
+    /// <summary>ناتج عن مردود مبيعات - Sales Return</summary>
+    SalesReturn = 3,
+
+    /// <summary>ناتج عن فاتورة مشتريات - Purchase Invoice</summary>
+    PurchaseInvoice = 4,
+
+    /// <summary>ناتج عن مردود مشتريات - Purchase Return</summary>
+    PurchaseReturn = 5,
+
+    /// <summary>ناتج عن تسوية مخزون - Stock Adjustment</summary>
+    StockAdjustment = 6,
+
+    /// <summary>ناتج عن سند مصروف - Expense</summary>
+    Expense = 7,
+
+    /// <summary>ناتج عن دورة رواتب - Payroll</summary>
+    Payroll = 8,
+
+    /// <summary>ناتج عن سند إتلاف مخزون - Stock Write-Off</summary>
+    StockWriteOff = 9,
+
+    /// <summary>ناتج عن تحويل نقد بين الخزنة ودرج الكاش - Cash Transfer</summary>
+    CashTransfer = 10,
+
+    /// <summary>ناتج عن عهدة نقدية بيد مندوب - Rep Cash Custody</summary>
+    CashCustody = 11,
+
+    /// <summary>ناتج عن تسجيل شيك (مستلم من عميل أو مصدر لمورد) — يُدخل «برسم التحصيل/السداد»</summary>
+    BankCheckReceipt = 12,
+
+    /// <summary>ناتج عن إيداع شيك مستلم للتحصيل — بلا أثر محاسبي (مرحلة وسيطة فقط)</summary>
+    BankCheckDeposit = 13,
+
+    /// <summary>ناتج عن تحصيل/صرف شيك ناجح — أصبح نقداً في البنك</summary>
+    BankCheckClearance = 14,
+
+    /// <summary>ناتج عن ارتداد شيك — عكس الأثر الأول (عودة الدين كما كان)</summary>
+    BankCheckBounce = 15,
+
+    /// <summary>ناتج عن تسوية وردية كاشير عند إغلاق الصندوق (فروقات صندوق)</summary>
+    ShiftReconciliation = 16,
+
+    /// <summary>ناتج عن ترحيل دفعة أرصدة افتتاحية رسمية (Opening Balance Batch)</summary>
+    OpeningBalance = 17,
+
+    /// <summary>ناتج عن سند قبض (Receipt Voucher) — تسوية ذمم العملاء</summary>
+    ReceiptVoucher = 18,
+
+    /// <summary>ناتج عن سند صرف (Payment Voucher) — تسوية ذمم الموردين</summary>
+    PaymentVoucher = 19,
+
+    /// <summary>
+    /// SUB-2b/P3 — قيد رد مبلغ للعميل: مدين 1200 (ذمم) — دائن 1100/1101.
+    /// منفصل عن <see cref="PaymentVoucher"/> ليظهر في تقارير الردود ويُصنَّف صحيحًا.
+    /// </summary>
+    CustomerRefund = 20
+}

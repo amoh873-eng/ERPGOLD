@@ -1,0 +1,205 @@
+@* نموذج حوار لإنشاء قيد محاسبي (سطر مدين/سطر دائن) *@
+@inject IStringLocalizer<SharedResources> Loc
+@using ERPSystem.Application.Reporting
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+            }
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker @bind-Date="_entryDate" Label="@Loc["EntryDate"]"
+                                   Variant="Variant.Outlined" T="DateTime?" AutoClose="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_reference" Label="@Loc["ReferenceDocument"]" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_description" Label="@Loc["DescriptionStatement"]" Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@Loc["EntryLines"]</MudText>
+
+            @foreach (var leg in _legs)
+            {
+                <MudGrid Class="mb-1 align-items-center">
+                    <MudItem xs="12" sm="4">
+                        @* الحسابات المتحركة فقط (Leaf) وفق قواعد النظام — والقيمة المحفوظة هي معرّف الحساب لا نص المسار *@
+                        <MudAutocomplete T="Guid" @bind-Value="leg.AccountId"
+                                         Label="@Loc["Account"]" Variant="Variant.Outlined" Dense="true"
+                                         SearchFunc="SearchLeafAccountsAsync"
+                                         ToStringFunc="AccountDisplayText"
+                                         MinCharacters="0" MaxItems="40" DebounceInterval="150"
+                                         ResetValueOnEmptyText="false" CoerceText="false"
+                                         Placeholder="ابحث بالرمز أو الاسم أو المسار">
+                            <ItemTemplate>
+                                @{ var pick = AccountById(context); }
+                                @if (pick is not null)
+                                {
+                                    <div class="acct-pick-row">
+                                        <span class="acct-code @AccountLevelStyle.CssClass(pick.Level)"
+                                              style="@AccountLevelStyle.InlineStyle(pick.Level)">@pick.Code</span>
+                                        <span class="acct-name @AccountLevelStyle.CssClass(pick.Level)"
+                                              style="@AccountLevelStyle.InlineStyle(pick.Level)">@pick.NameAr</span>
+                                        <span class="acct-pick-path">@AccountPathText(pick)</span>
+                                    </div>
+                                }
+                            </ItemTemplate>
+                        </MudAutocomplete>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField Culture="@CultureInfo.InvariantCulture" T="decimal" DecimalPlaces="2" Format="0.00" @bind-Value="leg.Debit"
+                                         Label="@Loc["Debit"]" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField Culture="@CultureInfo.InvariantCulture" T="decimal" DecimalPlaces="2" Format="0.00" @bind-Value="leg.Credit"
+                                         Label="@Loc["Credit"]" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" sm="2" Class="d-flex align-items-center">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       Color="Color.Error" OnClick="@(e => RemoveLeg(leg))" />
+                    </MudItem>
+                </MudGrid>
+            }
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="AddLeg" Class="mt-2">
+                @Loc["AddLeg"]
+            </MudButton>
+
+            <MudPaper Elevation="1" Class="pa-3 mt-4">
+                <MudText Typo="Typo.body2">@Loc["DebitTotal"]: @_totalDebit.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2">@Loc["CreditTotal"]: @_totalCredit.ToString("N2")</MudText>
+                <MudText Typo="Typo.body2" Color="@(_isBalanced ? Color.Success : Color.Error)">
+                    @Loc["Difference"]: @_difference.ToString("N2") @(_isBalanced ? Loc["Balanced"] : Loc["Unbalanced"])
+                </MudText>
+            </MudPaper>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Color="Color.Default">@Loc["Cancel"]</MudButton>
+        <MudButton OnClick="SubmitAsync" Variant="Variant.Filled" Color="Color.Primary">@Loc["SaveEntry"]</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Inject] private IJournalEntryService JournalService { get; set; } = default!;
+    [Inject] private IAccountService AccountService { get; set; } = default!;
+
+    private class LegEditor
+    {
+        public Guid AccountId { get; set; }
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+    }
+
+    private MudForm? _form;
+    private List<AccountDto> _accounts = new();
+    private List<LegEditor> _legs = new();
+
+    // ── اختيار الحساب: أهلية الترحيل من الخدمة (Leaf فقط) + عرض هرمي بالمسار والمستوى ──
+    private Dictionary<Guid, AccountDto> _accountsById = new();
+    private Dictionary<Guid, string> _accountPaths = new();
+
+    private DateTime? _entryDate = DateTime.Today;
+    private string? _reference;
+    private string? _description;
+    private string? _error;
+
+    private decimal _totalDebit => Math.Round(_legs.Sum(l => l.Debit), 2);
+    private decimal _totalCredit => Math.Round(_legs.Sum(l => l.Credit), 2);
+    private decimal _difference => Math.Abs(_totalDebit - _totalCredit);
+    private bool _isBalanced => _totalDebit == _totalCredit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // قيد حركة: نعرض الحسابات المتحركة (Leaf) فقط — لا يُرحَّل إلى حساب رئيسي (Parent).
+        // الأهلية تأتي من الخدمة نفسها (نفس القواعد المحاسبية)، والتغيير هنا للعرض فقط.
+        _accounts = await AccountService.GetLeafAccountsAsync();
+        _accountsById = _accounts.GroupBy(a => a.Id).ToDictionary(g => g.Key, g => g.First());
+
+        // المسار الهرمي للعرض (1 — الأصول / 1100 — الصندوق / 11001 — صندوق نقدية) — للعرض فقط.
+        try { _accountPaths = await BuildAccountPathsAsync(); }
+        catch { _accountPaths = new Dictionary<Guid, string>(); }
+
+        AddLeg();
+        AddLeg();
+    }
+
+    /// <summary>يبني مسار كل حساب من شجرة الحسابات الفعلية (لا من طول الكود) — بلا أي حساب أرصدة.</summary>
+    private async Task<Dictionary<Guid, string>> BuildAccountPathsAsync()
+    {
+        // منطق واحد مشترك في طبقة Application (مُختبر) — لا تكرار هنا.
+        var tree = await AccountService.GetAccountTreeAsync();
+        return AccountHierarchyPaths.Build(tree);
+    }
+
+    /// <summary>المسار الهرمي المعروض للحساب، أو رمزه واسمه إن تعذّر بناء المسار.</summary>
+    private string AccountPathText(AccountDto account)
+        => AccountHierarchyPaths.For(account, _accountPaths);
+
+    /// <summary>نص عرض الحساب المختار (القيمة المحفوظة تبقى معرّف الحساب Guid لا هذا النص).</summary>
+    private string AccountDisplayText(Guid id)
+        => _accountsById.TryGetValue(id, out var account) ? $"{account.Code} — {account.NameAr}" : string.Empty;
+
+    private AccountDto? AccountById(Guid id)
+        => _accountsById.TryGetValue(id, out var account) ? account : null;
+
+    /// <summary>بحث سريع في الحسابات المتحركة بالرمز أو الاسم أو المسار (بلا أي استعلام قاعدة بيانات).</summary>
+    private Task<IEnumerable<Guid>> SearchLeafAccountsAsync(string value, CancellationToken token)
+    {
+        var query = (value ?? string.Empty).Trim();
+        IEnumerable<AccountDto> items = _accounts;
+
+        if (query.Length > 0)
+        {
+            var needle = query.ToLowerInvariant();
+            items = items.Where(a =>
+                a.Code.ToLowerInvariant().Contains(needle)
+                || a.NameAr.ToLowerInvariant().Contains(needle)
+                || AccountPathText(a).ToLowerInvariant().Contains(needle));
+        }
+
+        return Task.FromResult(items.Take(40).Select(a => a.Id));
+    }
+
+    private void AddLeg() => _legs.Add(new LegEditor());
+
+    private void RemoveLeg(LegEditor leg)
+    {
+        if (_legs.Count > 2) _legs.Remove(leg);
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task SubmitAsync()
+    {
+        if (_legs.Any(l => l.AccountId == Guid.Empty)) { _error = Loc["SelectAccountPerLeg"]; return; }
+        if (!_isBalanced) { _error = Loc["UnbalancedEntry", _difference.ToString("N2")]; return; }
+        if (_totalDebit == 0) { _error = Loc["NoAmounts"]; return; }
+
+        _error = null;
+        try
+        {
+            await JournalService.CreateManualEntryAsync(
+                _entryDate ?? DateTime.Today,
+                _reference,
+                _description,
+                _legs.Select(l => new JournalEntryLegInput
+                {
+                    AccountId = l.AccountId,
+                    DebitAmount = l.Debit,
+                    CreditAmount = l.Credit
+                }).ToList());
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) { _error = ErrorLocalizer.Resolve(Loc, ex); }
+    }
+}
+

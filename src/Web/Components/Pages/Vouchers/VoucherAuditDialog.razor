@@ -1,0 +1,50 @@
+@* حوار سجل التدقيق (D3-A) لسند قبض/صرف — عرض فقط، الجدول مُلحَق لا يُعدَّل من الواجهة *@
+@using ERPSystem.Application.DTOs.Vouchers
+@inject IStringLocalizer<SharedResources> Loc
+
+<MudDialog>
+    <DialogContent>
+        @if (Entries.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">@Loc["NoData"]</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="Entries" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>@Loc["Date"]</MudTh>
+                    <MudTh>@Loc["Status"]</MudTh>
+                    <MudTh>@Loc["User"]</MudTh>
+                    <MudTh>@Loc["Description"]</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.PerformedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudTd>
+                    <MudTd>@ActionLabel(context.Action)</MudTd>
+                    <MudTd>@context.PerformedBy</MudTd>
+                    <MudTd>@context.Details</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="Color.Primary" Variant="Variant.Filled">@Loc["Close"]</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public List<VoucherAuditDto> Entries { get; set; } = new();
+
+    private string ActionLabel(string action) => action switch
+    {
+        "Created" => Loc["Draft"],
+        "Updated" => Loc["Edit"],
+        "Approved" => Loc["VoucherStatusApproved"],
+        "Posted" => Loc["VoucherStatusPosted"],
+        "Cancelled" => Loc["VoucherStatusCancelled"],
+        _ => action
+    };
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+}

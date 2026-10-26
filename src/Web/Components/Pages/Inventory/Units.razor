@@ -1,0 +1,130 @@
+﻿@page "/inventory/units"
+@attribute [Authorize(Roles = "Inventory")]
+<ModuleGuard ModuleKey="Inventory">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة وحدات القياس - جدول الوحدات (قطعة، كيلو جرام، لتر...) *@
+
+<PageTitle>@Loc["Units"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["Units"]" Icon="@Icons.Material.Filled.Straighten" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">
+        @Loc["AddUnit"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["UnitsCount", _units.Count]</MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_units.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">
+            @Loc["NoUnits"]
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_units" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["Code"]</MudTh>
+                <MudTh>@Loc["NameAr"]</MudTh>
+                <MudTh>@Loc["NameEn"]</MudTh>
+                <MudTh>@Loc["Status"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Code</MudTd>
+                <MudTd>@context.NameAr</MudTd>
+                <MudTd>@context.NameEn</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                        @(context.IsActive ? Loc["Active"] : Loc["Inactive"])
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   Color="Color.Primary" OnClick="@(e => OpenEditDialog(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ToggleOn" Size="Size.Small"
+                                   Color="Color.Secondary" OnClick="@(e => ToggleActive(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error" OnClick="@(e => DeleteUnit(context))"
+                                   Disabled="context.IsSystem" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+    private List<UnitDto> _units = new();
+
+    [Inject] private IUnitService UnitService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try { _units = await UnitService.GetAllAsync(); }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters { ["UnitService"] = UnitService };
+        var dialog = await DialogService.ShowAsync<UnitFormDialog>(
+            Loc["AddUnitTitle"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["UnitSaved"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task OpenEditDialog(UnitDto unit)
+    {
+        var parameters = new DialogParameters { ["UnitService"] = UnitService, ["EditUnit"] = unit };
+        var dialog = await DialogService.ShowAsync<UnitFormDialog>(
+            Loc["EditUnitTitle", unit.NameAr], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["UnitUpdated"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task DeleteUnit(UnitDto unit)
+    {
+        if (unit.IsSystem) { Snackbar.Add(Loc["SystemUnitDeleteWarning"], Severity.Warning); return; }
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["DeleteConfirmation"], Loc["DeleteUnitConfirm", unit.NameAr],
+            yesText: Loc["Delete"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+        try { await UnitService.DeleteAsync(unit.Id); Snackbar.Add(Loc["UnitDeleted"], Severity.Success); await LoadAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ToggleActive(UnitDto unit)
+    {
+        try
+        {
+            await UnitService.ToggleActiveAsync(unit.Id);
+            Snackbar.Add(unit.IsActive ? Loc["UnitDeactivated"] : Loc["UnitActivated"], Severity.Info);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}
+</ModuleGuard>

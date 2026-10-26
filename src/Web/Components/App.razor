@@ -1,0 +1,73 @@
+@using MudBlazor.Services
+@using Microsoft.AspNetCore.Components.Endpoints
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <!-- MudBlazor stylesheet: ضروري لتنسيق جميع مكوّنات MudBlazor وأيقوناتها -->
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["ERPSystem.Web.styles.css"]" />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Material Icons: خط الأيقونات المطلوب لعرض أيقونات MudBlazor -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet />
+</head>
+
+<body>
+    @* Prerendering is enabled: it renders the page HTML server-side on first load.
+       DbContext concurrency during prerender is avoided because MainLayout performs no
+       database work in OnInitializedAsync (it loads after first render) and page queries
+       run sequentially, so never two operations on the shared scoped AppDbContext at once. *@
+    <Routes @rendermode="RenderModeForPage" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <!-- MudBlazor JavaScript -->
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script>
+        // دالة طباعة عامة تُستدعى من مكوّنات Blazor (طباعة إيصال نقطة البيع)
+        window.erpPrint = function () { window.print(); };
+
+        // إعدادات نقطة البيع: تطبيق / حفظ / تحميل (تُخزَّن في localStorage)
+        window.erpApplyPosSettings = function (cols, cartW, accent, scale) {
+            var s = document.documentElement.style;
+            s.setProperty('--pos-cols', cols);
+            s.setProperty('--pos-cart-w', cartW + 'px');
+            s.setProperty('--pos-accent', accent);
+            s.setProperty('--pos-scale', scale);
+        };
+        window.erpSavePosSettings = function (json) { try { localStorage.setItem('posSettings', json); } catch (e) {} };
+        window.erpLoadPosSettings = function () { try { return localStorage.getItem('posSettings'); } catch (e) { return null; } };
+        window.erpApplyPrimary = function (hex) {
+            if (!hex) return;
+            try {
+                document.documentElement.style.setProperty('--erp-primary', hex);
+                document.documentElement.style.setProperty('--mud-palette-primary', hex);
+            } catch(e) {}
+        };
+    </script>
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    /// <summary>
+    /// وضع التفاعل شرطي لكل طلب: InteractiveServer فقط إذا قبل الطلب التوجيه التفاعلي؛
+    /// وإلا null (SSR ثابت) — مثل صفحة /login فلا تُفتح دائرة أبداً عند تحميلها أول مرة.
+    /// </summary>
+    private IComponentRenderMode? RenderModeForPage
+        => HttpContext?.AcceptsInteractiveRouting() == true
+            ? Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer
+            : null;
+}

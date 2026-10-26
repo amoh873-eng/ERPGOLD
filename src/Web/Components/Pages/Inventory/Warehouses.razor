@@ -1,0 +1,165 @@
+﻿@page "/inventory/warehouses"
+@attribute [Authorize(Roles = "Inventory")]
+<ModuleGuard ModuleKey="Inventory">
+@inject IStringLocalizer<SharedResources> Loc
+
+@* صفحة المخازن - إدارة المخازن المتعددة والمخزن الافتراضي *@
+
+<PageTitle>@Loc["Warehouses"] - @Loc["AppName"]</PageTitle>
+
+<PageHeader Title="@Loc["Warehouses"]" Icon="@Icons.Material.Filled.Warehouse" />
+
+<MudToolBar Class="mb-4">
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">
+        @Loc["AddWarehouse"]
+    </MudButton>
+    <MudSpacer />
+    <MudText Class="align-self-center muted-text">@Loc["WarehousesCount", _warehouses.Count]</MudText>
+</MudToolBar>
+
+<MudPaper Elevation="1">
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_warehouses.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="m-4">
+            @Loc["NoWarehouses"]
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_warehouses" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>@Loc["Code"]</MudTh>
+                <MudTh>@Loc["WarehouseName"]</MudTh>
+                <MudTh>@Loc["Location"]</MudTh>
+                <MudTh>@Loc["IsDefault"]</MudTh>
+                <MudTh>@Loc["Status"]</MudTh>
+                <MudTh>@Loc["Actions"]</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Code</MudTd>
+                <MudTd>@context.NameAr</MudTd>
+                <MudTd>@context.Location</MudTd>
+                <MudTd>
+                    @if (context.IsDefault)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">@Loc["Default"]</MudChip>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">—</MudText>
+                    }
+                </MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                        @(context.IsActive ? Loc["Active"] : Loc["Inactive"])
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    @if (!context.IsDefault)
+                    {
+                        <MudTooltip Text="@Loc["SetAsDefault"]">
+                            <MudIconButton Icon="@Icons.Material.Filled.Star" Size="Size.Small"
+                                           Color="Color.Secondary" OnClick="@(e => SetDefault(context))" />
+                        </MudTooltip>
+                    }
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   Color="Color.Primary" OnClick="@(e => OpenEditDialog(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ToggleOn" Size="Size.Small"
+                                   Color="Color.Info" OnClick="@(e => ToggleActive(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error" OnClick="@(e => DeleteWarehouse(context))"
+                                   Disabled="context.IsSystem" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager InfoFormat="@Loc["PagerInfo"]" RowsPerPageString="@Loc["RowsPerPage"]" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private bool _isLoading = true;
+    private List<WarehouseDto> _warehouses = new();
+
+    [Inject] private IWarehouseService WarehouseService { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try { _warehouses = await WarehouseService.GetAllAsync(); }
+        catch (Exception ex) { Snackbar.Add($"{Loc["LoadError"]} {ex.Message}", Severity.Error); }
+        finally { _isLoading = false; }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters { ["WarehouseService"] = WarehouseService };
+        var dialog = await DialogService.ShowAsync<WarehouseFormDialog>(
+            Loc["AddWarehouse"], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["WarehouseSaved"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task OpenEditDialog(WarehouseDto warehouse)
+    {
+        if (warehouse.IsSystem) { Snackbar.Add(Loc["SystemWarehouseEditWarning"], Severity.Warning); return; }
+        var parameters = new DialogParameters
+        {
+            ["WarehouseService"] = WarehouseService,
+            ["EditWarehouse"] = warehouse
+        };
+        var dialog = await DialogService.ShowAsync<WarehouseFormDialog>(
+            Loc["EditWarehouseTitle", warehouse.NameAr], parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result?.Canceled != true) { Snackbar.Add(Loc["WarehouseUpdated"], Severity.Success); await LoadAsync(); }
+    }
+
+    private async Task SetDefault(WarehouseDto warehouse)
+    {
+        try
+        {
+            await WarehouseService.SetDefaultAsync(warehouse.Id);
+            Snackbar.Add(Loc["SetDefaultSuccess", warehouse.NameAr], Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteWarehouse(WarehouseDto warehouse)
+    {
+        if (warehouse.IsSystem) { Snackbar.Add(Loc["SystemWarehouseDeleteWarning"], Severity.Warning); return; }
+        var confirmed = await DialogService.ShowMessageBox(
+            Loc["DeleteConfirmation"], Loc["DeleteWarehouseConfirm", warehouse.NameAr],
+            yesText: Loc["Delete"], cancelText: Loc["Cancel"]);
+        if (confirmed != true) return;
+        try { await WarehouseService.DeleteAsync(warehouse.Id); Snackbar.Add(Loc["WarehouseDeleted"], Severity.Success); await LoadAsync(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task ToggleActive(WarehouseDto warehouse)
+    {
+        try
+        {
+            await WarehouseService.ToggleActiveAsync(warehouse.Id);
+            Snackbar.Add(warehouse.IsActive ? Loc["WarehouseDeactivated"] : Loc["WarehouseActivated"], Severity.Info);
+            await LoadAsync();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}
+
+</ModuleGuard>

@@ -1,0 +1,743 @@
+using ERPSystem.Domain.Entities;
+using ERPSystem.Infrastructure.Data.Configurations;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+
+namespace ERPSystem.Infrastructure.Data;
+
+/// <summary>
+/// Central database context for the ERP system.
+/// This is the bridge between C# code and SQL Server.
+/// 
+/// يرث من IdentityDbContext لتضمين جداول الهوية (Users/Roles) إلى جانب جداول ERP.
+/// </summary>
+public class AppDbContext : IdentityDbContext<IdentityUser>
+{
+    static AppDbContext()
+    {
+        // Npgsql 6+: أعمدة DateTime الافتراضية تُعرض timestamptz (UTC فقط) بينما التطبيق
+        // يستخدم DateTime.Now/Today (Local) في مواضع عديدة. نفعّل السلوك القديم الذي:
+        //  - يقبل أي DateTime.Kind عند الكتابة (Local/Utc/Unspecified)
+        //  - يشغّل القراءة/الكتابة كـ "timestamp without time zone" مع تعامل سليم مع الصيغ.
+        AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+    }
+
+    /// <summary>
+    /// Constructor accepting DbContextOptions (used by DI to inject connection string).
+    /// </summary>
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+    {
+    }
+
+    /// <summary>
+    /// Chart of Accounts table.
+    /// </summary>
+    public DbSet<Account> Accounts => Set<Account>();
+
+    /// <summary>
+    /// Units of measure table (وحدات القياس).
+    /// </summary>
+    public DbSet<Unit> Units => Set<Unit>();
+
+    /// <summary>
+    /// Item categories table (فئات الأصناف).
+    /// </summary>
+    public DbSet<Category> Categories => Set<Category>();
+
+    /// <summary>
+    /// Inventory items table (الأصناف).
+    /// </summary>
+    public DbSet<Item> Items => Set<Item>();
+
+    /// <summary>
+    /// Warehouses table (المخازن).
+    /// </summary>
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+
+    /// <summary>
+    /// Stock movements table (حركات المخزون).
+    /// </summary>
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+
+    /// <summary>
+    /// Stock counts table (الجرد الدوري).
+    /// </summary>
+    public DbSet<StockCount> StockCounts => Set<StockCount>();
+
+    /// <summary>
+    /// Stock count lines table (بنود الجرد الدوري).
+    /// </summary>
+    public DbSet<StockCountLine> StockCountLines => Set<StockCountLine>();
+
+    /// <summary>
+    /// Customers table (العملاء).
+    /// </summary>
+    public DbSet<Customer> Customers => Set<Customer>();
+
+    /// <summary>
+    /// Sales invoices table (فواتير المبيعات).
+    /// </summary>
+    public DbSet<SalesInvoice> SalesInvoices => Set<SalesInvoice>();
+
+    /// <summary>
+    /// Bank card-settlement statement rows (كشف تسوية البنك للبطاقات) — used by
+    /// the POS card reconciliation screen to match system card sales against the bank.
+    /// </summary>
+    public DbSet<BankCardStatement> BankCardStatements => Set<BankCardStatement>();
+
+    /// <summary>
+    /// Sales invoice lines table (بنود فواتير المبيعات).
+    /// </summary>
+    public DbSet<SalesInvoiceLine> SalesInvoiceLines => Set<SalesInvoiceLine>();
+
+    /// <summary>
+    /// Sales returns table (مردودات المبيعات).
+    /// </summary>
+    public DbSet<SalesReturn> SalesReturns => Set<SalesReturn>();
+
+    /// <summary>
+    /// Sales return lines table (بنود مردودات المبيعات).
+    /// </summary>
+    public DbSet<SalesReturnLine> SalesReturnLines => Set<SalesReturnLine>();
+
+    /// <summary>
+    /// Sales quotes table (عروض الأسعار).
+    /// </summary>
+    public DbSet<SalesQuote> SalesQuotes => Set<SalesQuote>();
+
+    /// <summary>
+    /// Sales quote lines table (بنود عروض الأسعار).
+    /// </summary>
+    public DbSet<SalesQuoteLine> SalesQuoteLines => Set<SalesQuoteLine>();
+
+    /// <summary>
+    /// Purchase orders table (أوامر الشراء).
+    /// </summary>
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+
+    /// <summary>
+    /// Purchase order lines table (بنود أوامر الشراء).
+    /// </summary>
+    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+
+    /// <summary>
+    /// Journal entries table (القيود المحاسبية).
+    /// </summary>
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+
+    /// <summary>
+    /// Journal entry lines table (بنود القيود المحاسبية).
+    /// </summary>
+    public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
+
+    /// <summary>
+    /// Suppliers table (الموردون).
+    /// </summary>
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+
+    /// <summary>
+    /// Purchase invoices table (فواتير المشتريات).
+    /// </summary>
+    public DbSet<PurchaseInvoice> PurchaseInvoices => Set<PurchaseInvoice>();
+
+    /// <summary>
+    /// Purchase invoice lines table (بنود فواتير المشتريات).
+    /// </summary>
+    public DbSet<PurchaseInvoiceLine> PurchaseInvoiceLines => Set<PurchaseInvoiceLine>();
+
+    /// <summary>
+    /// Purchase returns table (مردودات المشتريات).
+    /// </summary>
+    public DbSet<PurchaseReturn> PurchaseReturns => Set<PurchaseReturn>();
+
+    /// <summary>
+    /// Purchase return lines table (بنود مردودات المشتريات).
+    /// </summary>
+    public DbSet<PurchaseReturnLine> PurchaseReturnLines => Set<PurchaseReturnLine>();
+
+    /// <summary>
+    /// Number sequences table (العدّادات التسلسلية لتوليد أرقام المستندات).
+    /// </summary>
+    public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
+
+    /// <summary>
+    /// Departments table (الأقسام).
+    /// </summary>
+    public DbSet<Department> Departments => Set<Department>();
+
+    /// <summary>
+    /// Job positions table (المسميات الوظيفية).
+    /// </summary>
+    public DbSet<Position> Positions => Set<Position>();
+
+    /// <summary>
+    /// Employees table (الموظفون).
+    /// </summary>
+    public DbSet<Employee> Employees => Set<Employee>();
+
+    /// <summary>
+    /// Leave requests table (الإجازات).
+    /// </summary>
+    public DbSet<Leave> Leaves => Set<Leave>();
+
+    /// <summary>
+    /// Expense categories table (فئات المصاريف).
+    /// </summary>
+    public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
+
+    /// <summary>
+    /// Expense entries table (سندات المصروف).
+    /// </summary>
+    public DbSet<ExpenseEntry> ExpenseEntries => Set<ExpenseEntry>();
+
+    /// <summary>
+    /// Leads table (العملاء المحتملون).
+    /// </summary>
+    public DbSet<Lead> Leads => Set<Lead>();
+
+    /// <summary>
+    /// Sales opportunities table (الفرص البيعية).
+    /// </summary>
+    public DbSet<Opportunity> Opportunities => Set<Opportunity>();
+
+    /// <summary>
+    /// CRM activities table (سجل التواصل).
+    /// </summary>
+    public DbSet<Activity> Activities => Set<Activity>();
+
+    /// <summary>
+    /// Scheduled follow-ups table (المتابعات المجدولة).
+    /// </summary>
+    public DbSet<FollowUp> FollowUps => Set<FollowUp>();
+
+    /// <summary>
+    /// Attendance records table (سجل الحضور اليومي).
+    /// </summary>
+    public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
+
+    /// <summary>ورديات الكاشير وتسوية درج الكاش.</summary>
+    public DbSet<CashierShift> CashierShifts => Set<CashierShift>();
+
+    /// <summary>
+    /// Payroll runs table (دورات الرواتب).
+    /// </summary>
+    public DbSet<PayrollRun> PayrollRuns => Set<PayrollRun>();
+
+    /// <summary>
+    /// Payroll run lines table (بنود دورات الرواتب).
+    /// </summary>
+    public DbSet<PayrollRunLine> PayrollRunLines => Set<PayrollRunLine>();
+
+    /// <summary>
+    /// Exception logs table (سجل الأخطاء — لوحة إدارة النظام).
+    /// </summary>
+    public DbSet<ExceptionLog> ExceptionLogs => Set<ExceptionLog>();
+
+    public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
+    public DbSet<SystemSettingsHistory> SystemSettingsHistory => Set<SystemSettingsHistory>();
+    public DbSet<CustomReportDefinition> CustomReportDefinitions => Set<CustomReportDefinition>();
+    public DbSet<HealthSnapshot> HealthSnapshots => Set<HealthSnapshot>();
+    public DbSet<UpdateLog> UpdateLogs => Set<UpdateLog>();
+    public DbSet<BackupMarker> BackupMarkers => Set<BackupMarker>();
+
+    /// <summary>إشعارات الموظفين (نقص مخزون / انتهاء صلاحية / نظام) — جرس الإشعارات للواجهة.</summary>
+    public DbSet<Notification> Notifications => Set<Notification>();
+
+    /// <summary>دُفعات المخزون للصنف التي تتبّع الدُفعات (Item.TracksBatches) — إجبارياً داخل مخزن.</summary>
+    public DbSet<ItemBatch> ItemBatches => Set<ItemBatch>();
+
+    /// <summary>سندات إتلاف المخزون (StockWriteOff) — سجل الإتلافات مع قيودها المحاسبية.</summary>
+    public DbSet<StockWriteOff> StockWriteOffs => Set<StockWriteOff>();
+
+    /// <summary>دفعات المخزون لصنف يتتبّع انتهاء الصلاحية (طبقة موازية اختيارية).</summary>
+    public DbSet<StockBatch> StockBatches => Set<StockBatch>();
+
+    /// <summary>عمليات بيع موقوفة من نقطة البيع (Hold) — سلة محلية فقط.</summary>
+    public DbSet<HeldSale> HeldSales => Set<HeldSale>();
+
+    /// <summary>تحويلات النقد بين الخزنة الرئيسية ودرج الكاش (Cash Drawer Transactions).</summary>
+    public DbSet<CashDrawerTransaction> CashDrawerTransactions => Set<CashDrawerTransaction>();
+
+    /// <summary>عهدة نقدية بيد المندوبين (Rep Cash Custody): تحصيل ميداني وتسليم للمكتب.</summary>
+    public DbSet<RepCashCustody> RepCashCustody => Set<RepCashCustody>();
+
+    /// <summary>حد الرف المستهدَف لمنسّق الرفوف.</summary>
+    public DbSet<ShelfParLevel> ShelfParLevels => Set<ShelfParLevel>();
+
+    /// <summary>فحوصات الرفوف الميدانية.</summary>
+    public DbSet<ShelfCheck> ShelfChecks => Set<ShelfCheck>();
+
+    /// <summary>رصد أسعار المنافسين.</summary>
+    public DbSet<ShelfPriceCapture> ShelfPriceCaptures => Set<ShelfPriceCapture>();
+
+    /// <summary>دفعات الأرصدة الافتتاحية الرسمية (Opening Balance Batches) — قيد افتتاحي واحد فعّال لكل سنة مالية.</summary>
+    public DbSet<OpeningBalanceBatch> OpeningBalanceBatches => Set<OpeningBalanceBatch>();
+
+    /// <summary>بنود دفعات الأرصدة الافتتاحية (حساب متحرك + مدين/دائن + تفصيل طرف/صنف).</summary>
+    public DbSet<OpeningBalanceLine> OpeningBalanceLines => Set<OpeningBalanceLine>();
+
+    /// <summary>
+    /// الفترات المحاسبية (2026-10-25): قفل/فتح شهر داخل سنة مالية.
+    /// **غياب الصف = الفترة مفتوحة** ⇒ توافق خلفي كامل بلا أي صفوف مزروعة.
+    /// </summary>
+    public DbSet<AccountingPeriod> AccountingPeriods => Set<AccountingPeriod>();
+
+    /// <summary>سندات القبض (D1-A: مسودة ← اعتماد ← ترحيل ← إلغاء) — لا قيد قبل الترحيل.</summary>
+    public DbSet<ReceiptVoucher> ReceiptVouchers => Set<ReceiptVoucher>();
+
+    /// <summary>سندات الصرف (D1-A) — لا قيد قبل الترحيل.</summary>
+    public DbSet<PaymentVoucher> PaymentVouchers => Set<PaymentVoucher>();
+
+    // PU-04 — تخصيص دفعات الموردين + مستند العكس.
+    public DbSet<PaymentAllocation> PaymentAllocations => Set<PaymentAllocation>();
+
+    /// <summary>P0-2 (المرحلة B) — تخصيصات مقبوضات العملاء على فواتير المبيعات.</summary>
+    public DbSet<CustomerPaymentAllocation> CustomerPaymentAllocations => Set<CustomerPaymentAllocation>();
+    public DbSet<PaymentVoucherReversal> PaymentVoucherReversals => Set<PaymentVoucherReversal>();
+
+    /// <summary>سجل التدقيق (D3-A) — عمليات سندات القبض والصرف بلا أي أسرار.</summary>
+    public DbSet<AuditTrail> AuditTrails => Set<AuditTrail>();
+
+    /// <summary>
+    /// Configures the model using Fluent API from configuration classes.
+    /// Keeps OnModelCreating clean by delegating each entity's config to its own class.
+    /// </summary>
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // Apply all IEntityTypeConfiguration classes in this assembly
+        modelBuilder.ApplyConfiguration(new AccountConfiguration());
+        modelBuilder.ApplyConfiguration(new UnitConfiguration());
+        modelBuilder.ApplyConfiguration(new CategoryConfiguration());
+        modelBuilder.ApplyConfiguration(new ItemConfiguration());
+        modelBuilder.ApplyConfiguration(new ItemBatchConfiguration());
+        modelBuilder.ApplyConfiguration(new StockWriteOffConfiguration());
+        modelBuilder.ApplyConfiguration(new WarehouseConfiguration());
+        modelBuilder.ApplyConfiguration(new StockMovementConfiguration());
+        modelBuilder.ApplyConfiguration(new CustomerConfiguration());
+        modelBuilder.ApplyConfiguration(new SalesInvoiceConfiguration());
+        modelBuilder.ApplyConfiguration(new BankCardStatementConfiguration());
+        modelBuilder.ApplyConfiguration(new SalesInvoiceLineConfiguration());
+        modelBuilder.ApplyConfiguration(new SalesReturnConfiguration());
+        modelBuilder.ApplyConfiguration(new SalesReturnLineConfiguration());
+        modelBuilder.ApplyConfiguration(new SupplierConfiguration());
+        modelBuilder.ApplyConfiguration(new PurchaseInvoiceConfiguration());
+        modelBuilder.ApplyConfiguration(new PurchaseInvoiceLineConfiguration());
+        modelBuilder.ApplyConfiguration(new PurchaseReturnConfiguration());
+        modelBuilder.ApplyConfiguration(new PurchaseReturnLineConfiguration());
+        modelBuilder.ApplyConfiguration(new JournalEntryConfiguration());
+        modelBuilder.ApplyConfiguration(new JournalEntryLineConfiguration());
+        modelBuilder.ApplyConfiguration(new NumberSequenceConfiguration());
+        modelBuilder.ApplyConfiguration(new DepartmentConfiguration());
+        modelBuilder.ApplyConfiguration(new PositionConfiguration());
+        modelBuilder.ApplyConfiguration(new EmployeeConfiguration());
+        modelBuilder.ApplyConfiguration(new LeaveConfiguration());
+        modelBuilder.ApplyConfiguration(new ExpenseCategoryConfiguration());
+        modelBuilder.ApplyConfiguration(new ExpenseEntryConfiguration());
+        modelBuilder.ApplyConfiguration(new LeadConfiguration());
+        modelBuilder.ApplyConfiguration(new OpportunityConfiguration());
+        modelBuilder.ApplyConfiguration(new ActivityConfiguration());
+        modelBuilder.ApplyConfiguration(new FollowUpConfiguration());
+        modelBuilder.ApplyConfiguration(new ExceptionLogConfiguration());
+        modelBuilder.ApplyConfiguration(new SystemSettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new AttendanceRecordConfiguration());
+        modelBuilder.ApplyConfiguration(new PayrollRunConfiguration());
+        modelBuilder.ApplyConfiguration(new PayrollRunLineConfiguration());
+        modelBuilder.ApplyConfiguration(new CustomReportDefinitionConfiguration());
+        modelBuilder.ApplyConfiguration(new SystemSettingsHistoryConfiguration());
+        modelBuilder.ApplyConfiguration(new SalesInvoiceConfiguration());
+        modelBuilder.ApplyConfiguration(new NotificationConfiguration());
+        modelBuilder.ApplyConfiguration(new StockBatchConfiguration());
+        modelBuilder.ApplyConfiguration(new HeldSaleConfiguration());
+        modelBuilder.ApplyConfiguration(new CashDrawerTransactionConfiguration());
+        modelBuilder.ApplyConfiguration(new RepCashCustodyConfiguration());
+        modelBuilder.ApplyConfiguration(new ShelfParLevelConfiguration());
+        modelBuilder.ApplyConfiguration(new ShelfCheckConfiguration());
+        modelBuilder.ApplyConfiguration(new ShelfPriceCaptureConfiguration());
+        modelBuilder.ApplyConfiguration(new BankCheckConfiguration());
+        modelBuilder.ApplyConfiguration(new CashierShiftConfiguration());
+        modelBuilder.ApplyConfiguration(new OpeningBalanceBatchConfiguration());
+        modelBuilder.ApplyConfiguration(new OpeningBalanceLineConfiguration());
+        // الفترات المحاسبية (2026-10-25): قفل/فتح شهر — فهرس فريد (السنة، الشهر).
+        modelBuilder.ApplyConfiguration(new AccountingPeriodConfiguration());
+        // سندات القبض والصرف + سجل التدقيق (جولة 2026-10-20 — كيانات جديدة فقط)
+        modelBuilder.ApplyConfiguration(new ReceiptVoucherConfiguration());
+        modelBuilder.ApplyConfiguration(new PaymentVoucherConfiguration());
+        modelBuilder.ApplyConfiguration(new PaymentAllocationConfiguration());
+        modelBuilder.ApplyConfiguration(new CustomerPaymentAllocationConfiguration());
+        modelBuilder.ApplyConfiguration(new PaymentVoucherReversalConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditTrailConfiguration());
+
+        // Concurrency tokens: SQL Server يصنع rowversion تلقائياً.
+        // PostgreSQL ليس لديه rowversion — نستخدم عمود bytea صريحاً مع ValueGeneratedNever
+        // حتى لا يُسقط NULL عند الإدراج، مع إبقاء عمود التحقق متاحاً للتطبيق إن أراد استخدامه.
+        var isNpgsql = Database.IsNpgsql();
+        if (isNpgsql)
+        {
+            modelBuilder.Entity<Item>().Property(i => i.RowVersion).HasColumnType("bytea").ValueGeneratedNever();
+            modelBuilder.Entity<Account>().Property(a => a.RowVersion).HasColumnType("bytea").ValueGeneratedNever();
+            modelBuilder.Entity<PayrollRun>().Property(p => p.RowVersion).HasColumnType("bytea").ValueGeneratedNever();
+        }
+        else
+        {
+            modelBuilder.Entity<Item>().Property(i => i.RowVersion).IsRowVersion();
+            modelBuilder.Entity<Account>().Property(a => a.RowVersion).IsRowVersion();
+        }
+
+        // ==================== Seed Data ====================
+        // بذور أولية لشجرة الحسابات - هذه الحسابات الأساسية ستنشأ تلقائياً
+        // عند أول ترحيل (Migration) لقاعدة البيانات.
+        // تمثل الفئات الرئيسية الخمس في المحاسبة.
+        SeedChartOfAccounts(modelBuilder);
+        SeedInventoryData(modelBuilder);
+        SeedSalesAccounts(modelBuilder);
+        SeedHrData(modelBuilder);
+        SeedPosData(modelBuilder);
+    }
+
+    /// <summary>
+    /// Seeds default HR master data: a root department and a default position.
+    /// These give the user a starting point before adding employees.
+    /// </summary>
+    private void SeedHrData(ModelBuilder modelBuilder)
+    {
+        var seedTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        modelBuilder.Entity<Department>().HasData(
+            new Department
+            {
+                Id = Guid.Parse("60000000-0000-0000-0000-000000000001"),
+                Code = "ADMIN",
+                NameAr = "الإدارة العامة",
+                NameEn = "General Administration",
+                IsActive = true,
+                IsSystem = true,
+                CreatedAt = seedTime
+            }
+        );
+
+        modelBuilder.Entity<Position>().HasData(
+            new Position
+            {
+                Id = Guid.Parse("70000000-0000-0000-0000-000000000001"),
+                Code = "ADMIN-MGR",
+                NameAr = "مدير",
+                NameEn = "Manager",
+                DepartmentId = Guid.Parse("60000000-0000-0000-0000-000000000001"),
+                IsActive = true,
+                IsSystem = true,
+                CreatedAt = seedTime
+            }
+        );
+    }
+
+    /// <summary>
+    /// Seeds the default walk-in customer used by the Point of Sale (POS) screen
+    /// when no specific customer is selected (زبون نقدي).
+    /// </summary>
+    private void SeedPosData(ModelBuilder modelBuilder)
+    {
+        var seedTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        modelBuilder.Entity<Customer>().HasData(
+            new Customer
+            {
+                Id = Guid.Parse("90000000-0000-0000-0000-000000000001"),
+                Code = "CASH",
+                NameAr = "زبون نقدي",
+                NameEn = "Walk-in Cash Customer",
+                IsActive = true,
+                IsSystem = true,
+                CreatedAt = seedTime
+            }
+        );
+    }
+
+    /// <summary>
+    /// Seeds the default Chart of Accounts structure.
+    /// Creates the 5 main account categories as system accounts.
+    /// </summary>
+    private void SeedChartOfAccounts(ModelBuilder modelBuilder)
+    {
+        var assetId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+        var liabilityId = Guid.Parse("10000000-0000-0000-0000-000000000002");
+        var equityId = Guid.Parse("10000000-0000-0000-0000-000000000003");
+        var revenueId = Guid.Parse("10000000-0000-0000-0000-000000000004");
+        var expenseId = Guid.Parse("10000000-0000-0000-0000-000000000005");
+
+        modelBuilder.Entity<Account>().HasData(
+            new Account
+            {
+                Id = assetId,
+                Code = "1",
+                NameAr = "الأصول",
+                NameEn = "Assets",
+                AccountType = Domain.Enums.AccountType.Asset,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = null,
+                IsActive = true,
+                IsSystem = true,
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new Account
+            {
+                Id = liabilityId,
+                Code = "2",
+                NameAr = "الخصوم",
+                NameEn = "Liabilities",
+                AccountType = Domain.Enums.AccountType.Liability,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = null,
+                IsActive = true,
+                IsSystem = true,
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new Account
+            {
+                Id = equityId,
+                Code = "3",
+                NameAr = "حقوق الملكية",
+                NameEn = "Equity",
+                AccountType = Domain.Enums.AccountType.Equity,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = null,
+                IsActive = true,
+                IsSystem = true,
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new Account
+            {
+                Id = revenueId,
+                Code = "4",
+                NameAr = "الإيرادات",
+                NameEn = "Revenue",
+                AccountType = Domain.Enums.AccountType.Revenue,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = null,
+                IsActive = true,
+                IsSystem = true,
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new Account
+            {
+                Id = expenseId,
+                Code = "5",
+                NameAr = "المصروفات",
+                NameEn = "Expenses",
+                AccountType = Domain.Enums.AccountType.Expense,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = null,
+                IsActive = true,
+                IsSystem = true,
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            }
+        );
+    }
+
+    /// <summary>
+    /// Seeds default inventory master data: units of measure, categories, and warehouses.
+    /// These are required before the user can create items, so they are created
+    /// automatically on the first migration / EnsureCreated.
+    /// </summary>
+    private void SeedInventoryData(ModelBuilder modelBuilder)
+    {
+        var seedTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        // ===== وحدات القياس =====
+        modelBuilder.Entity<Unit>().HasData(
+            new Unit { Id = Guid.Parse("20000000-0000-0000-0000-000000000001"), Code = "PCS", NameAr = "قطعة", NameEn = "Piece", IsActive = true, IsSystem = true, CreatedAt = seedTime },
+            new Unit { Id = Guid.Parse("20000000-0000-0000-0000-000000000002"), Code = "KG", NameAr = "كيلو جرام", NameEn = "Kilogram", IsActive = true, IsSystem = true, CreatedAt = seedTime },
+            new Unit { Id = Guid.Parse("20000000-0000-0000-0000-000000000003"), Code = "L", NameAr = "لتر", NameEn = "Liter", IsActive = true, IsSystem = true, CreatedAt = seedTime },
+            new Unit { Id = Guid.Parse("20000000-0000-0000-0000-000000000004"), Code = "BOX", NameAr = "عبوة", NameEn = "Box", IsActive = true, IsSystem = true, CreatedAt = seedTime },
+            new Unit { Id = Guid.Parse("20000000-0000-0000-0000-000000000005"), Code = "M", NameAr = "متر", NameEn = "Meter", IsActive = true, IsSystem = true, CreatedAt = seedTime }
+        );
+
+        // ===== فئات الأصناف =====
+        modelBuilder.Entity<Category>().HasData(
+            new Category { Id = Guid.Parse("40000000-0000-0000-0000-000000000001"), Code = "RAW", NameAr = "مواد خام", NameEn = "Raw Materials", IsActive = true, IsSystem = true, CreatedAt = seedTime },
+            new Category { Id = Guid.Parse("40000000-0000-0000-0000-000000000002"), Code = "FIN", NameAr = "منتجات تامة", NameEn = "Finished Goods", IsActive = true, IsSystem = true, CreatedAt = seedTime },
+            new Category { Id = Guid.Parse("40000000-0000-0000-0000-000000000003"), Code = "SUP", NameAr = "مستلزمات تشغيل", NameEn = "Operating Supplies", IsActive = true, IsSystem = true, CreatedAt = seedTime }
+        );
+
+        // ===== المخازن =====
+        modelBuilder.Entity<Warehouse>().HasData(
+            new Warehouse
+            {
+                Id = Guid.Parse("30000000-0000-0000-0000-000000000001"),
+                Code = "MAIN",
+                NameAr = "المخزن الرئيسي",
+                NameEn = "Main Warehouse",
+                Location = "المقر الرئيسي",
+                IsActive = true,
+                IsSystem = true,
+                IsDefault = true,
+                CreatedAt = seedTime
+            }
+        );
+    }
+
+    /// <summary>
+    /// Seeds the system accounts required for automatic journal entries
+    /// (الترابط المحاسبي). These are the accounts the sales/purchases modules
+    /// debit and credit automatically, so they must exist before any document is posted.
+    /// </summary>
+    private void SeedSalesAccounts(ModelBuilder modelBuilder)
+    {
+        // Root accounts are seeded in SeedChartOfAccounts with these ids.
+        var assetsRoot = Guid.Parse("10000000-0000-0000-0000-000000000001");
+        var liabilitiesRoot = Guid.Parse("10000000-0000-0000-0000-000000000002");
+        var revenueRoot = Guid.Parse("10000000-0000-0000-0000-000000000004");
+        var expenseRoot = Guid.Parse("10000000-0000-0000-0000-000000000005");
+
+        var seedTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        modelBuilder.Entity<Account>().HasData(
+            // أصول
+            new Account
+            {
+                Id = Guid.Parse("11000000-0000-0000-0000-000000000001"),
+                Code = "1100", NameAr = "الصندوق", NameEn = "Cash",
+                AccountType = Domain.Enums.AccountType.Asset,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = assetsRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            new Account
+            {
+                Id = Guid.Parse("11000000-0000-0000-0000-000000000002"),
+                Code = "1200", NameAr = "العملاء/المدينون", NameEn = "Accounts Receivable",
+                AccountType = Domain.Enums.AccountType.Asset,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = assetsRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            new Account
+            {
+                Id = Guid.Parse("11000000-0000-0000-0000-000000000003"),
+                Code = "1300", NameAr = "مخزون البضاعة", NameEn = "Inventory",
+                AccountType = Domain.Enums.AccountType.Asset,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = assetsRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            new Account
+            {
+                Id = Guid.Parse("11000000-0000-0000-0000-000000000004"),
+                Code = "1101", NameAr = "البنك", NameEn = "Bank",
+                AccountType = Domain.Enums.AccountType.Asset,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = assetsRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // شيكات برسم التحصيل: شيكات استُلمت من عملاء (أداة دفع مؤجلة) لم تُحصَّل بعد —
+            // أصل قريب من النقد (بحقه عن البنك)؛ يُنقل إلى «البنك» عند التحصيل.
+            new Account
+            {
+                Id = Guid.Parse("11000000-0000-0000-0000-000000000012"),
+                Code = "1102", NameAr = "شيكات برسم التحصيل", NameEn = "Checks Receivable",
+                AccountType = Domain.Enums.AccountType.Asset,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = assetsRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // ذمم البطاقات: مبيعات أجريت بالبطاقة وتمت من الطرفية لكن البنك لم يسوّيها بعد
+            // (مستحق من البنك — أصل، ليس نقداً فورياً). يُدين عند بيع بطاقة بدل الصندوق.
+            new Account
+            {
+                Id = Guid.Parse("11000000-0000-0000-0000-000000000005"),
+                Code = "1205", NameAr = "ذمم البطاقات (مستحق من البنك)", NameEn = "Card Receivables",
+                AccountType = Domain.Enums.AccountType.Asset,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = assetsRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // درج الكاش: موقع نقدي منفصل عن الخزنة الرئيسية «الصندوق» (1100) — تُرحَّل إليه مبيعات
+            // نقطة البيع النقدية وتحويلات التمويل، فيتسنّى مطابقة رصيده لاحقاً (إيراد نقدي − مردود − سحوبات).
+            new Account
+            {
+                Id = Guid.Parse("11000000-0000-0000-0000-000000000006"),
+                Code = "1105", NameAr = "نقدية - درج الكاش", NameEn = "Cash - Till Drawer",
+                AccountType = Domain.Enums.AccountType.Asset,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = assetsRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // خصوم
+            new Account
+            {
+                Id = Guid.Parse("12000000-0000-0000-0000-000000000001"),
+                Code = "2100", NameAr = "ضريبة المبيعات المستحقة", NameEn = "Sales Tax Payable",
+                AccountType = Domain.Enums.AccountType.Liability,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = liabilitiesRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            new Account
+            {
+                Id = Guid.Parse("12000000-0000-0000-0000-000000000002"),
+                Code = "2200", NameAr = "الموردون/الدائنون", NameEn = "Accounts Payable",
+                AccountType = Domain.Enums.AccountType.Liability,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = liabilitiesRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // شيكات برسم السداد: شيكات صُدرت لصالح موردين (التزام مؤجل) لم تُصرف بعد —
+            // التزام قريب من النقد؛ يُنقل إلى «البنك» عند الصرف. (2400 — لأن 2300 محجوز لرواتب مستحقة الدفع)
+            new Account
+            {
+                Id = Guid.Parse("12000000-0000-0000-0000-000000000013"),
+                Code = "2400", NameAr = "شيكات برسم السداد", NameEn = "Checks Payable",
+                AccountType = Domain.Enums.AccountType.Liability,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = liabilitiesRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // إيرادات
+            new Account
+            {
+                Id = Guid.Parse("14000000-0000-0000-0000-000000000001"),
+                Code = "4100", NameAr = "إيراد المبيعات", NameEn = "Sales Revenue",
+                AccountType = Domain.Enums.AccountType.Revenue,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = revenueRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            new Account
+            {
+                Id = Guid.Parse("14000000-0000-0000-0000-000000000002"),
+                Code = "4110", NameAr = "مردودات المبيعات", NameEn = "Sales Returns and Allowances",
+                AccountType = Domain.Enums.AccountType.Revenue,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = revenueRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // مصروفات
+            new Account
+            {
+                Id = Guid.Parse("15000000-0000-0000-0000-000000000001"),
+                Code = "5100", NameAr = "تكلفة البضاعة المباعة", NameEn = "Cost of Goods Sold",
+                AccountType = Domain.Enums.AccountType.Expense,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = expenseRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // ── مصروف رواتب — مصروف تشغيلي يُحمّل عند الاستحقاق (Debit)
+            new Account
+            {
+                Id = Guid.Parse("15000000-0000-0000-0000-000000000010"),
+                Code = "5200", NameAr = "مصروف رواتب", NameEn = "Salary Expense",
+                AccountType = Domain.Enums.AccountType.Expense,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = expenseRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // ── فروقات الصندوق — عجز/زيادة تسوية وردية الكاشير عند إغلاق الدرج (Debit طبيعياً؛
+            //     الزيادة تُقابَل بدائن على نفس الحساب كتسوية/مكاسب بسيطة) ──
+            new Account
+            {
+                Id = Guid.Parse("15000000-0000-0000-0000-000000000040"),
+                Code = "5110", NameAr = "فروقات الصندوق", NameEn = "Cash Over/Short",
+                AccountType = Domain.Enums.AccountType.Expense,
+                NormalBalance = Domain.Enums.NormalBalance.Debit,
+                ParentAccountId = expenseRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            },
+            // ── رواتب مستحقة الدفع — التزام على المنشأة تجاه الموظفين (Credit)
+            new Account
+            {
+                Id = Guid.Parse("12000000-0000-0000-0000-000000000010"),
+                Code = "2300", NameAr = "رواتب مستحقة الدفع", NameEn = "Payroll Payable",
+                AccountType = Domain.Enums.AccountType.Liability,
+                NormalBalance = Domain.Enums.NormalBalance.Credit,
+                ParentAccountId = liabilitiesRoot, IsActive = true, IsSystem = true, CreatedAt = seedTime
+            }
+        );
+    }
+}

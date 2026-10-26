@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="ERPSystem.Mobile.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:ERPSystem.Mobile"
+    Title="ERP الميداني"
+    FlyoutBehavior="Disabled"
+    Shell.BackgroundColor="#4F46E5">
+
+    <ShellContent
+        Title="الرئيسية"
+        ContentTemplate="{DataTemplate local:RootPage}"
+        Route="root"
+        Shell.NavBarIsVisible="False" />
+
+</Shell>

@@ -1,0 +1,67 @@
+@page "/login"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@* ملاحظة معمارية مهمة:
+   تسجيل الدخول لم يعد يمر عبر مسار معالجة فورم Blazor SSR إطلاقًا (لا @formname ولا
+   [SupplyParameterFromForm]). بدلًا من ذلك، يُرسل النموذج كنموذج HTML عادي (method="post"
+   action="/login/handler") إلى نقطة نهاية Minimal API مخصصة في Program.cs
+   (app.MapPost("/login/handler", ...) بنفس نمط "/culture/set")، والتي تقرأ الحقول من الفورم وتستدعي
+   SignInManager.PasswordSignInAsync ثم تعيد التوجيه. هذا يتجنّب تمامًا فئة الأخطاء المعروفة
+   "The POST request does not specify which form is being submitted" الناتجة عن غموض @formname
+   مع وضع العرض التفاعلي (InteractiveServer)، ويتجنّب أيضًا AmbiguousMatchException الناتج عن
+   تصادم POST /login مع مسار مكوّن @page "/login". لا تُعدّل هذا الملف لإعادة استخدام @formname
+   أو [SupplyParameterFromForm] أو لتغيير action إلى "/login" أبدًا. *@
+@using System.ComponentModel.DataAnnotations
+@inject IStringLocalizer<SharedResources> Loc
+
+@* شاشة تسجيل الدخول — تصميم حديث (خلفية متدرجة + بطاقة مركزية) مع الحفاظ على ASP.NET Core Identity *@
+
+<PageTitle>@Loc["Login"] - @Loc["AppName"]</PageTitle>
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-logo">
+            <MudIcon Icon="@Icons.Material.Filled.Layers" Class="login-logo-icon" />
+            <div>
+                <div class="login-brand-name">@Loc["AppName"]</div>
+                <div class="login-brand-erp">ERP</div>
+            </div>
+        </div>
+        <p class="login-subtitle">@Loc["LoginSubtitle"]</p>
+
+        @if (ShowError)
+        {
+            <div class="login-error">@Loc["LoginFailed"]</div>
+        }
+
+        <form method="post" action="/login/handler">
+            <AntiforgeryToken />
+            @if (!string.IsNullOrEmpty(ReturnUrl))
+            {
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+            }
+            <div class="login-field">
+                <label>@Loc["Email"]</label>
+                <input name="Email" type="email" required />
+            </div>
+            <div class="login-field">
+                <label>@Loc["Password"]</label>
+                <input name="Password" type="password" required />
+            </div>
+            <label class="login-remember">
+                <input name="RememberMe" type="checkbox" value="true" />
+                @Loc["RememberMe"]
+            </label>
+            <button type="submit" class="login-btn">@Loc["Login"]</button>
+        </form>
+
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")] private string? ErrorFlag { get; set; }
+    [SupplyParameterFromQuery(Name = "ReturnUrl")] private string? ReturnUrl { get; set; }
+
+    private bool ShowError => !string.IsNullOrEmpty(ErrorFlag);
+}

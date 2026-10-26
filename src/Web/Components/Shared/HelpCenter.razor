@@ -1,0 +1,241 @@
+@* مركز المساعدة: زر «؟» في أعلى الشاشة يفتح لوحة جانبية قابلة للإغلاق (Drawer) تضم أقسام النظام
+   وموضوعاتها في أقسام قابلة للطي، مع بحث فوري يفلتر المواضيع أثناء الكتابة.
+   المحتوى النصي يأتي من حزمة HelpContent.resx / HelpContent.en.resx (عبر IStringLocalizer). *@
+@inject IStringLocalizer<SharedResources> Loc
+@inject IStringLocalizer<HelpContent> HL
+@inject Microsoft.Extensions.Configuration.IConfiguration Config
+
+@* زر الفتح — علامة استفهام واضحة بستايل بنفسجي مطابق لزر الإعدادات المجاور *@
+<MudIconButton Icon="@Icons.Material.Filled.Help" Color="Color.Default"
+               Class="@("erp-help-toggle" + (_open ? " erp-help-toggle--hidden" : "") + (Embedded ? " erp-help-toggle--embedded" : ""))"
+               Style="@HelpToggleStyle"
+               Title="@Loc["HelpTitle"]" OnClick="Toggle" />
+
+@* زر «تنزيل التطبيق» — بجوار زر المساعدة مباشرة، ويفتح رابط تنزيل تطبيق الجوال (APK) *@
+<MudIconButton Icon="@Icons.Material.Filled.Download" Color="Color.Default"
+               Class="@("erp-download-toggle" + (_open ? " erp-download-toggle--hidden" : "") + (Embedded ? " erp-download-toggle--embedded" : ""))"
+               Style="@DownloadToggleStyle"
+               Href="@DownloadUrl" Target="_blank"
+               Title="@Loc["DownloadApp"]" />
+
+@if (_open)
+{
+    @* خلفية معتمة قابلة للنقر للإغلاق — لا تمنع العمل إلا عند الحاجة *@
+    <div class="erp-help-overlay" @onclick="Close"></div>
+
+    @* اللوحة الجانبية الثابتة (يمين الشاشة في RTL) *@
+    <div class="erp-help-panel" role="dialog" aria-label="@Loc["HelpTitle"]">
+        <div class="erp-help-header">
+            <div class="erp-help-header-title">
+                <MudIcon Icon="@Icons.Material.Filled.Help" Style="color:#4C1D95; font-size:1.4rem;" />
+                <div>
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:800; color:#4C1D95; margin:0;">@Loc["HelpTitle"]</MudText>
+                    <MudText Typo="Typo.caption" Style="color:var(--erp-muted); margin:0;">@Loc["HelpSubtitle"]</MudText>
+                </div>
+            </div>
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Default" Size="Size.Small"
+                           Title="@Loc["HelpClose"]" OnClick="Close" Class="erp-help-close" />
+        </div>
+
+        @* البحث الفوري: يفلتر الأقسام/المواضيع أثناء الكتابة *@
+        <div class="erp-help-search">
+            <MudTextField @bind-Value="_query" T="string" Class="erp-help-search-input"
+                          Placeholder="@Loc["HelpSearchPlaceholder"]"
+                          Variant="Variant.Outlined" Dense="true" Immediate="true"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          OnKeyDown="OnSearchKeyDown" />
+        </div>
+
+        <div class="erp-help-body">
+            @if (VisibleModulesCount == 0)
+            {
+                <div class="erp-help-empty">
+                    <MudIcon Icon="@Icons.Material.Filled.SearchOff" Style="font-size:2rem; color:var(--erp-muted);" />
+                    <MudText Typo="Typo.subtitle1" Style="font-weight:700; color:#4C1D95; margin-top:4px;">@Loc["HelpNoResults"]</MudText>
+                    <MudText Typo="Typo.body2" Style="color:var(--erp-muted);">@Loc["HelpNoResultsHint"]</MudText>
+                </div>
+            }
+            @foreach (var m in _modules)
+            {
+                if (!IsModuleVisible(m)) { continue; }
+                var open = IsModuleOpen(m.TitleKey);
+                <div class="erp-help-section @(open ? "erp-help-section--open" : "")">
+                    <button type="button" class="erp-help-section-head" @onclick="() => ToggleSection(m.TitleKey)">
+                        <MudIcon Icon="@m.Icon" Style="@("color:" + m.Color)" />
+                        <span class="erp-help-section-title">@Loc[m.TitleKey]</span>
+                        <MudIcon Icon="@(open ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" Class="erp-help-chevron" />
+                    </button>
+                    @if (open)
+                    {
+                        <div class="erp-help-section-body">
+                            @foreach (var topic in m.Topics)
+                            {
+                                var tTitle = HL[topic + "Title"].Value;
+                                var tWhat = HL[topic + "What"].Value.Trim();
+                                var tHow = HL[topic + "How"].Value.Trim();
+                                var tConcept = HL[topic + "Concept"].Value.Trim();
+                                <div class="erp-help-topic">
+                                    <div class="erp-help-topic-title">@tTitle</div>
+
+                                    @if (!string.IsNullOrEmpty(tWhat))
+                                    {
+                                        <div class="erp-help-block">
+                                            <span class="erp-help-block-label">@Loc["HelpWhatTitle"]</span>
+                                            @foreach (var para in Paragraphs(tWhat)) { <p class="erp-help-p">@para</p> }
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrEmpty(tHow))
+                                    {
+                                        <div class="erp-help-block">
+                                            <span class="erp-help-block-label">@Loc["HelpHowTitle"]</span>
+                                            @foreach (var para in Paragraphs(tHow)) { <p class="erp-help-p">@para</p> }
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrEmpty(tConcept))
+                                    {
+                                        <div class="erp-help-block erp-help-block--concept">
+                                            <span class="erp-help-block-label">@Loc["HelpConceptTitle"]</span>
+                                            @foreach (var para in Paragraphs(tConcept)) { <p class="erp-help-p">@para</p> }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Embedded { get; set; } = false;
+
+    /// <summary>وصف قسم واحد في اللوحة: مفتاح العنوان من SharedResources + أيقونة + لون + بدايات مفاتيح الموضوعات في حزمة HelpContent.</summary>
+    private record HelpModule(string TitleKey, string Icon, string Color, string[] Topics) { }
+
+    /// <summary>نفس ترتيب الوحدات المعروضة في القائمة العلوية للمحافظة على الاتساق.</summary>
+    private readonly List<HelpModule> _modules = new List<HelpModule>
+    {
+        new HelpModule("Accounting",    Icons.Material.Filled.AccountBalance,     "#6D5BD0",
+            new[] { "AccAccountsTree", "AccJournalEntries", "AccGeneralLedger", "AccTrialBalance", "AccFinancialStatements" }),
+        new HelpModule("Inventory",     Icons.Material.Filled.Inventory,          "#10B981",
+            new[] { "InvItems", "InvCategories", "InvUnits", "InvWarehouses", "InvMovements", "InvBatches" }),
+        new HelpModule("Sales",         Icons.Material.Filled.ShoppingCart,       "#F472B6",
+            new[] { "SalInvoices", "SalReturns", "SalCustomers", "SalQuotes" }),
+        new HelpModule("Purchases",     Icons.Material.Filled.LocalShipping,      "#F59E0B",
+            new[] { "PurInvoices", "PurReturns", "PurSuppliers", "PurBarcodeReceiving" }),
+        new HelpModule("Pos",           Icons.Material.Filled.PointOfSale,        "#EC4899",
+            new[] { "PosSelling", "PosReturns", "PosCashTransfer", "PosShortcuts", "PosShift" }),
+        new HelpModule("BankChecks",    Icons.Material.Filled.RequestQuote,       "#4F46E5",
+            new[] { "ChkRegister", "ChkCollection", "ChkBounce", "ChkDueDates" }),
+        new HelpModule("HumanResources", Icons.Material.Filled.Groups,            "#14B8A6",
+            new[] { "HrDepartments", "HrPositions", "HrEmployees", "HrLeaves" }),
+        new HelpModule("Reports",       Icons.Material.Filled.Assessment,         "#06B6D4",
+            new[] { "RepRatios", "RepAging", "RepCashFlow", "RepItemProfitability", "RepBudget" }),
+        new HelpModule("Permissions",   Icons.Material.Filled.AdminPanelSettings, "#8B5CF6",
+            new[] { "SetUsersRoles", "SetSystem" }),
+    };
+
+    private bool _open;
+    private string _query = "";
+    private readonly HashSet<string> _collapsed = new();
+
+    private bool IsSearching => !string.IsNullOrWhiteSpace(_query);
+
+    private string HelpToggleStyle => "background:#E7E1F9;border:1px solid #C4B5FD;border-radius:10px;color:#4C1D95;"
+        + (Embedded ? "padding:2px;width:34px;height:34px;" : "");
+
+    /// <summary>
+    /// رابط تنزيل تطبيق الجوال (APK). قابل للضبط من الإعدادات عبر MobileApp:DownloadUrl،
+    /// والافتراضي مسار نسبي على نفس النطاق (Caddy يخدم /mobile/* من مجلد التنزيلات).
+    /// </summary>
+    private string DownloadUrl
+    {
+        get
+        {
+            var configured = Config["MobileApp:DownloadUrl"];
+            return string.IsNullOrWhiteSpace(configured)
+                ? "/mobile/com.erpsystem.mobile-Signed.apk"
+                : configured.Trim();
+        }
+    }
+
+    /// <summary>ستايل زر التنزيل — أزرق فاتح ليتميّز عن زر المساعدة البنفسجي.</summary>
+    private string DownloadToggleStyle => "background:#E0F2FE;border:1px solid #7DD3FC;border-radius:10px;color:#075985;"
+        + (Embedded ? "padding:2px;width:34px;height:34px;" : "");
+
+    /// <summary>اللوحة تُفتح مطويةً إلا القسم الأول، ويُحفظ تفضيل المستخدم بين الفتحات.</summary>
+    private void Open()
+    {
+        if (_collapsed.Count == 0 && _modules.Count > 1)
+        {
+            foreach (var m in _modules) { if (m.TitleKey != "Accounting") { _collapsed.Add(m.TitleKey); } }
+        }
+        _open = true;
+    }
+
+    private void Close()
+    {
+        _open = false;
+        _query = "";
+        _collapsed.Clear();
+    }
+
+    private void Toggle()
+    {
+        if (_open) { Close(); }
+        else { Open(); }
+    }
+
+    private void ToggleSection(string titleKey)
+    {
+        if (_collapsed.Contains(titleKey)) { _collapsed.Remove(titleKey); }
+        else { _collapsed.Add(titleKey); }
+    }
+
+    /// <summary>أثناء البحث تُفتح كل الأقسام المطابقة تلقائياً لتظهر النتائج فوراً.</summary>
+    private bool IsModuleOpen(string titleKey) => IsSearching || !_collapsed.Contains(titleKey);
+
+    /// <summary>القسم يظهر إن لم يكن هناك بحث، أو إن وُجدت العبارة في عنوانه أو أي من نصوصه.</summary>
+    private bool IsModuleVisible(HelpModule m)
+    {
+        if (!IsSearching) return true;
+        return ModuleHaystack(m).Contains(_query.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ModuleHaystack(HelpModule m)
+    {
+        var parts = new List<string>();
+        parts.Add(Loc[m.TitleKey].Value);
+        foreach (var topic in m.Topics)
+        {
+            parts.Add(HL[topic + "Title"].Value);
+            parts.Add(HL[topic + "What"].Value);
+            parts.Add(HL[topic + "How"].Value);
+            parts.Add(HL[topic + "Concept"].Value);
+        }
+        return string.Join(" ", parts);
+    }
+
+    private int VisibleModulesCount
+    {
+        get
+        {
+            var n = 0;
+            foreach (var m in _modules) { if (IsModuleVisible(m)) { n++; } }
+            return n;
+        }
+    }
+
+    /// <summary>فصل فقرات القيمة: الرمزان \n يفصلان بين الفقرات المخزّنة في ملف الموارد.</summary>
+    private string[] Paragraphs(string value) => value.Split("\\n");
+
+    /// <summary>إغلاق اللوحة بزر Escape من حقل البحث (نفس نمط لوحة المفاتيح المعتمد في الشاشات).</summary>
+    private async Task OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { Close(); }
+    }
+}
